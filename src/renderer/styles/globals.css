@@ -44,25 +44,6 @@ body {
 }
 
 /*
- * Offscreen copy of the collapsed pill, laid out at its natural width so the
- * capsule can be sized to hug its content. Never painted, never hit-tested.
- */
-.island-measure {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: max-content;
-  visibility: hidden;
-  pointer-events: none;
-  opacity: 0;
-  z-index: -1;
-}
-
-.island-measure > div {
-  width: max-content;
-}
-
-/*
  * The capsule is the ONLY thing that resizes. The OS window stays put, which
  * is what makes the hover expansion smooth instead of steppy.
  */

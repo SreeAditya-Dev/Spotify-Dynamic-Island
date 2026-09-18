@@ -9,14 +9,13 @@ interface CompactCapsuleProps {
 }
 
 /**
- * The collapsed pill. It deliberately does NOT stretch to a fixed width - the
- * row sizes to its content so the capsule can hug the title, and the title is
- * the only element allowed to shrink.
+ * The collapsed pill. Fixed width, so the title is the only element allowed to
+ * shrink - it truncates instead of the capsule resizing per track.
  */
 export const CompactCapsule: React.FC<CompactCapsuleProps> = ({ media, hasTrack }) => {
   if (!hasTrack) {
     return (
-      <div className="flex items-center h-full px-3.5 gap-2 text-neutral-400">
+      <div className="flex items-center w-full h-full px-3.5 gap-2 text-neutral-400">
         <div className="w-5 h-5 rounded-full bg-spotify-dark flex items-center justify-center border border-white/10 flex-shrink-0">
           <Music className="w-3 h-3 text-spotify-green" />
         </div>
@@ -29,7 +28,7 @@ export const CompactCapsule: React.FC<CompactCapsuleProps> = ({ media, hasTrack 
   }
 
   return (
-    <div className="flex items-center h-full px-2.5 gap-2.5">
+    <div className="flex items-center w-full h-full px-2.5 gap-2.5">
       {/* Album artwork thumbnail */}
       <div className="relative w-6 h-6 rounded-full overflow-hidden border border-white/15 shadow-sm bg-neutral-900 flex-shrink-0">
         {media.artworkUrl ? (
