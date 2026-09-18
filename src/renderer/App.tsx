@@ -13,6 +13,8 @@ declare global {
       setIgnoreMouseEvents: (ignore: boolean, forward?: boolean) => void;
       setPinned: (pinned: boolean) => void;
       setDemoMode: (enabled: boolean) => void;
+      expandIsland: () => void;
+      collapseIsland: () => void;
       openSpotifyWeb: () => void;
       minimizeApp: () => void;
       closeApp: () => void;
@@ -69,6 +71,7 @@ export const App: React.FC = () => {
   const [isPinned, setIsPinned] = useState(false);
   const [isDemoActive, setIsDemoActive] = useState(false);
   const [demoIndex, setDemoIndex] = useState(0);
+  const collapseTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Subscribe to Media Updates from Main process
   useEffect(() => {
@@ -92,29 +95,36 @@ export const App: React.FC = () => {
   };
 
   const handleMouseEnter = () => {
-    setIsHovered(true);
-    if (window.dynamicIsland) {
-      window.dynamicIsland.setIgnoreMouseEvents(false);
+    if (collapseTimerRef.current) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
     }
+    setIsHovered(true);
+    window.dynamicIsland?.expandIsland();
   };
 
   const handleMouseLeave = () => {
     setIsHovered(false);
-    if (!isPinned && window.dynamicIsland) {
-      window.dynamicIsland.setIgnoreMouseEvents(true, true);
+    if (!isPinned) {
+      if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = setTimeout(() => {
+        window.dynamicIsland?.collapseIsland();
+      }, 350);
     }
   };
 
   const togglePin = () => {
     const nextPinned = !isPinned;
     setIsPinned(nextPinned);
-    if (window.dynamicIsland) {
-      window.dynamicIsland.setPinned(nextPinned);
-      if (nextPinned) {
-        window.dynamicIsland.setIgnoreMouseEvents(false);
-      } else if (!isHovered) {
-        window.dynamicIsland.setIgnoreMouseEvents(true, true);
+    window.dynamicIsland?.setPinned(nextPinned);
+    if (nextPinned) {
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = null;
       }
+      window.dynamicIsland?.expandIsland();
+    } else if (!isHovered) {
+      window.dynamicIsland?.collapseIsland();
     }
   };
 

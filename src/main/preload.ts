@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('dynamicIsland', {
     ipcRenderer.send('resize-window', width, height),
   setPinned: (pinned: boolean) => ipcRenderer.send('set-pinned', pinned),
   setDemoMode: (enabled: boolean) => ipcRenderer.send('set-demo-mode', enabled),
+  expandIsland: () => ipcRenderer.send('expand-island'),
+  collapseIsland: () => ipcRenderer.send('collapse-island'),
   openSpotifyWeb: () => ipcRenderer.send('open-spotify-web'),
   minimizeApp: () => ipcRenderer.send('minimize-app'),
   closeApp: () => ipcRenderer.send('close-app')

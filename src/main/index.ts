@@ -18,27 +18,57 @@ let mainWindow: BrowserWindow | null = null;
 let mediaManager: MediaManager | null = null;
 let tray: Tray | null = null;
 let isPinned = false;
+let isQuitting = false;
 
-const WINDOW_WIDTH = 560;
-const WINDOW_HEIGHT = 280;
+const COLLAPSED_WIDTH = 260;
+const COLLAPSED_HEIGHT = 50;
+const EXPANDED_WIDTH = 480;
+const EXPANDED_HEIGHT = 225;
+
+function expandWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth } = primaryDisplay.bounds;
+  const posX = Math.round((screenWidth - EXPANDED_WIDTH) / 2);
+  mainWindow.setBounds({
+    x: posX,
+    y: 4,
+    width: EXPANDED_WIDTH,
+    height: EXPANDED_HEIGHT
+  });
+}
+
+function collapseWindow() {
+  if (!mainWindow || mainWindow.isDestroyed() || isPinned) return;
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth } = primaryDisplay.bounds;
+  const posX = Math.round((screenWidth - COLLAPSED_WIDTH) / 2);
+  mainWindow.setBounds({
+    x: posX,
+    y: 4,
+    width: COLLAPSED_WIDTH,
+    height: COLLAPSED_HEIGHT
+  });
+}
 
 function createWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth } = primaryDisplay.bounds;
 
-  const posX = Math.round((screenWidth - WINDOW_WIDTH) / 2);
-  const posY = 6; // Notch position near top border
+  const posX = Math.round((screenWidth - COLLAPSED_WIDTH) / 2);
+  const posY = 4; // Top notch border
 
   mainWindow = new BrowserWindow({
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
+    width: COLLAPSED_WIDTH,
+    height: COLLAPSED_HEIGHT,
     x: posX,
     y: posY,
+    type: 'toolbar', // Prevents Windows "Show Desktop" (Win+D / 3-finger swipe) from minimizing it
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     resizable: false,
-    skipTaskbar: false,
+    skipTaskbar: true, // Prevents minimizing as a standard taskbar window
     hasShadow: false,
     roundedCorners: false,
     webPreferences: {
@@ -54,8 +84,18 @@ function createWindow() {
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
 
-  // Default: Allow click-through on transparent parts
-  mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  // Prevent three-finger swipe down / Win+D ("Show Desktop") from minimizing the island
+  mainWindow.on('minimize', () => {
+    mainWindow?.restore();
+    mainWindow?.show();
+  });
+
+  // If window receives a hide signal during Show Desktop, keep it visible
+  mainWindow.on('hide', () => {
+    if (!isQuitting) {
+      mainWindow?.show();
+    }
+  });
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -69,7 +109,6 @@ function createWindow() {
 }
 
 function createTray() {
-  // Simple 16x16 icon in SVG/PNG format
   const svgIcon = `
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1DB954" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="10"></circle>
@@ -90,6 +129,11 @@ function createTray() {
         checked: isPinned,
         click: () => {
           isPinned = !isPinned;
+          if (isPinned) {
+            expandWindow();
+          } else {
+            collapseWindow();
+          }
           mainWindow?.webContents.send('toggle-pinned', isPinned);
           updateContextMenu();
         }
@@ -102,18 +146,25 @@ function createTray() {
       },
       { type: 'separator' },
       {
+        label: 'Open Spotify Web',
+        click: () => {
+          shell.openExternal('https://open.spotify.com');
+        }
+      },
+      {
         label: 'Reset Position',
         click: () => {
           if (mainWindow) {
             const primaryDisplay = screen.getPrimaryDisplay();
             const { width: screenWidth } = primaryDisplay.bounds;
-            mainWindow.setPosition(Math.round((screenWidth - WINDOW_WIDTH) / 2), 6);
+            mainWindow.setPosition(Math.round((screenWidth - COLLAPSED_WIDTH) / 2), 4);
           }
         }
       },
       {
         label: 'Quit Dynamic Island',
         click: () => {
+          isQuitting = true;
           app.quit();
         }
       }
@@ -138,10 +189,13 @@ app.whenReady().then(() => {
     }
   });
 
-  // IPC Event Handlers
-  ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    win?.setIgnoreMouseEvents(ignore, { forward: true, ...options });
+  // Dynamic Island Expansion / Collapse IPC
+  ipcMain.on('expand-island', () => {
+    expandWindow();
+  });
+
+  ipcMain.on('collapse-island', () => {
+    collapseWindow();
   });
 
   ipcMain.handle('send-command', (_, cmd: MediaCommand) => {
@@ -154,21 +208,27 @@ app.whenReady().then(() => {
 
   ipcMain.on('set-pinned', (_, pinned: boolean) => {
     isPinned = pinned;
+    if (pinned) {
+      expandWindow();
+    } else {
+      collapseWindow();
+    }
   });
 
   ipcMain.on('set-demo-mode', (_, enabled: boolean) => {
     mediaManager?.setDemoMode(enabled);
   });
 
-  ipcMain.on('minimize-app', () => {
-    mainWindow?.minimize();
-  });
-
   ipcMain.on('open-spotify-web', () => {
     shell.openExternal('https://open.spotify.com');
   });
 
+  ipcMain.on('minimize-app', () => {
+    mainWindow?.minimize();
+  });
+
   ipcMain.on('close-app', () => {
+    isQuitting = true;
     app.quit();
   });
 });
@@ -181,5 +241,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   mediaManager?.stop();
 });

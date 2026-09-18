@@ -20,20 +20,65 @@ $global:lastTitle = ""
 $global:lastArtist = ""
 $global:cachedThumb = ""
 
+function GetBestMediaSession() {
+    try {
+        if ($null -eq $global:mgr) { return $null }
+        $sessionList = @($global:mgr.GetSessions())
+        $total = $sessionList.Count
+        if ($total -eq 0) {
+            return $global:mgr.GetCurrentSession()
+        }
+
+        $bestSession = $null
+        $bestScore = -1
+
+        for ($i = 0; $i -lt $total; $i++) {
+            $s = $sessionList[$i]
+            if ($null -eq $s) { continue }
+            $info = $s.GetPlaybackInfo()
+            $status = if ($info) { "$($info.PlaybackStatus)".ToLower() } else { "" }
+            
+            $score = 0
+            if ($status -eq "playing") { $score += 100 }
+
+            $title = ""
+            $artist = ""
+            try {
+                $props = AwaitTask ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+                if ($null -ne $props) {
+                    $title = "$($props.Title)"
+                    $artist = "$($props.Artist)"
+                }
+            } catch {}
+
+            $app = "$($s.SourceAppId)".ToLower()
+            if (![string]::IsNullOrEmpty($title)) { $score += 10 }
+            if (![string]::IsNullOrEmpty($artist)) { $score += 30 }
+            if ($title.ToLower().Contains("spotify") -or $app.Contains("spotify")) { $score += 50 }
+
+            if ($score -gt $bestScore) {
+                $bestScore = $score
+                $bestSession = $s
+            }
+        }
+
+        if ($bestScore -gt 0 -and $null -ne $bestSession) {
+            return $bestSession
+        }
+
+        return $global:mgr.GetCurrentSession()
+    } catch {
+        return $null
+    }
+}
+
 function GetSessionMediaState() {
     try {
         if ($null -eq $global:mgr) {
             return '{"isPlaying":false,"title":"","artist":"","album":"","source":"none","position":0,"duration":0,"artworkUrl":""}'
         }
 
-        $session = $global:mgr.GetCurrentSession()
-        if ($null -eq $session) {
-            $sessions = $global:mgr.GetSessions()
-            if ($sessions.Count -gt 0) {
-                $session = $sessions[0]
-            }
-        }
-
+        $session = GetBestMediaSession
         if ($null -eq $session) {
             return '{"isPlaying":false,"title":"","artist":"","album":"","source":"none","position":0,"duration":0,"artworkUrl":""}'
         }
@@ -110,11 +155,7 @@ function GetSessionMediaState() {
 
 function ExecuteCommand($cmd) {
     try {
-        $session = $global:mgr.GetCurrentSession()
-        if ($null -eq $session) {
-            $sessions = $global:mgr.GetSessions()
-            if ($sessions.Count -gt 0) { $session = $sessions[0] }
-        }
+        $session = GetBestMediaSession
         if ($null -eq $session) { return $false }
 
         switch ($cmd.Trim().ToLower()) {
