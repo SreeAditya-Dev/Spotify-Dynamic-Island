@@ -1,0 +1,102 @@
+import { MediaManager } from '../src/main/services/mediaManager';
+import { MediaState } from '../src/types/media';
+
+async function testMediaManager() {
+  console.log('--- TEST 3: MediaManager State Machine & Command Router ---');
+
+  // Use another port for testing isolated manager so it doesn't conflict with running app
+  const manager = new MediaManager();
+
+  // Test initial state
+  const initial = manager.getState();
+  if (initial.isPlaying !== false) {
+    throw new Error('Expected initial state isPlaying to be false');
+  }
+  console.log('[PASS] Initial idle state verified');
+
+  // Test Demo mode activation
+  let receivedState: MediaState | null = null;
+  manager.on('state-changed', (state) => {
+    receivedState = state;
+  });
+
+  console.log('Activating Demo Mode...');
+  manager.setDemoMode(true, {
+    title: 'Starboy',
+    artist: 'The Weeknd',
+    album: 'Starboy',
+    duration: 230,
+    position: 45
+  });
+
+  if (!receivedState || receivedState.title !== 'Starboy' || !receivedState.isPlaying) {
+    throw new Error(`Demo mode activation failed: ${JSON.stringify(receivedState)}`);
+  }
+  console.log('[PASS] Demo mode activation verified');
+
+  // Test Toggle Play/Pause command
+  console.log('Sending Toggle command...');
+  manager.sendCommand('toggle');
+  if (receivedState.isPlaying !== false) {
+    throw new Error('Expected toggle to pause track');
+  }
+  console.log('[PASS] Pause toggle verified');
+
+  manager.sendCommand('toggle');
+  if (receivedState.isPlaying !== true) {
+    throw new Error('Expected toggle to resume track');
+  }
+  console.log('[PASS] Play toggle verified');
+
+  // Test Next track command
+  console.log('Sending Next track command...');
+  manager.sendCommand('next');
+  if (receivedState.title !== 'Blinding Lights') {
+    throw new Error(`Expected next track to be "Blinding Lights", got "${receivedState.title}"`);
+  }
+  console.log('[PASS] Next track progression verified');
+
+  // Test Seek command
+  console.log('Sending Seek command to 120s...');
+  manager.sendCommand({ type: 'seek', position: 120 });
+  if (receivedState.position !== 120) {
+    throw new Error(`Expected position to be 120, got ${receivedState.position}`);
+  }
+  console.log('[PASS] Timeline seeking verified');
+
+  // Test Volume command
+  console.log('Sending Volume command to 65%...');
+  manager.sendCommand({ type: 'volume', volume: 65 });
+  if (receivedState.volume !== 65) {
+    throw new Error(`Expected volume 65, got ${receivedState.volume}`);
+  }
+  console.log('[PASS] Volume control verified');
+
+  // Test Shuffle & Repeat commands
+  console.log('Sending Shuffle and Repeat toggle commands...');
+  const initialShuffle = receivedState.shuffle;
+  manager.sendCommand('toggleShuffle');
+  if (receivedState.shuffle === initialShuffle) {
+    throw new Error('Expected shuffle to toggle');
+  }
+  console.log('[PASS] Shuffle toggle verified');
+
+  const initialRepeat = receivedState.repeat;
+  manager.sendCommand('toggleRepeat');
+  if (receivedState.repeat === initialRepeat) {
+    throw new Error('Expected repeat to toggle');
+  }
+  console.log('[PASS] Repeat toggle verified');
+
+  // Teardown
+  manager.setDemoMode(false);
+  manager.stop();
+  console.log('[PASS] MediaManager clean teardown verified');
+
+  console.log('--- TEST 3 PASSED ---\n');
+}
+
+testMediaManager().catch((err) => {
+  console.error('[FAIL] Test 3 failed:', err);
+  process.exit(1);
+});

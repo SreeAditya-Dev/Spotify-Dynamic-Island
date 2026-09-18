@@ -1,0 +1,46 @@
+{
+  "name": "spotify-dynamic-island",
+  "version": "1.0.0",
+  "description": "Ultra-smooth, low-memory Dynamic Island for Spotify on Windows, Mac, and Linux",
+  "main": "dist-electron/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && powershell.exe -Command \"Copy-Item src/main/services/windows-smtc-daemon.ps1 dist-electron/main/ -Force -ErrorAction SilentlyContinue\"",
+    "start": "electron .",
+    "test": "tsx tests/run_all_tests.ts"
+  },
+  "keywords": [
+    "spotify",
+    "dynamic-island",
+    "electron",
+    "smtc",
+    "mpris",
+    "desktop-widget"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.6.1",
+    "electron": "^44.4.2",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vite-plugin-electron": "^1.1.2",
+    "vite-plugin-electron-renderer": "^1.0.0"
+  },
+  "dependencies": {
+    "@types/ws": "^8.18.1",
+    "lucide-react": "^1.47.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "ws": "^8.21.3"
+  }
+}

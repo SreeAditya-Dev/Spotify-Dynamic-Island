@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Spotify Dynamic Island Bridge",
+  "version": "1.0.0",
+  "description": "Connects Spotify Web Player (Chrome, Edge, Brave, Safari) to the Dynamic Island desktop app",
+  "permissions": [
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://open.spotify.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://open.spotify.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Spotify Dynamic Island Connected"
+  }
+}
