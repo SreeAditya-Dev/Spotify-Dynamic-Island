@@ -1,4 +1,12 @@
 @import "tailwindcss";
+/* Tailwind v4 does not auto-load the JS config; without this the spotify-* palette is dropped. */
+@config "../../../tailwind.config.js";
+
+:root {
+  /* Apple-style spring: a touch of overshoot on the way out, settles clean. */
+  --island-spring: cubic-bezier(0.32, 1.32, 0.4, 1);
+  --island-morph: 520ms;
+}
 
 * {
   box-sizing: border-box;
@@ -6,6 +14,7 @@
   -webkit-user-drag: none;
 }
 
+html,
 body {
   background: transparent !important;
   overflow: hidden;
@@ -14,34 +23,120 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
 }
 
-/* Apple Dynamic Island Spring Animations */
-.island-container {
-  transition: width 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-              height 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-              border-radius 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 0.42s ease;
-  will-change: width, height, transform, border-radius;
+#root {
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+
+/*
+ * The stage fills the (fixed-size) window. It is transparent and completely
+ * click-through - only the capsule takes pointer events, so the empty area
+ * around the island never blocks the desktop underneath.
+ */
+.island-stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+}
+
+/*
+ * The capsule is the ONLY thing that resizes. The OS window stays put, which
+ * is what makes the hover expansion smooth instead of steppy.
+ */
+.island-capsule {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateZ(0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: default;
+  contain: paint;
+  backface-visibility: hidden;
+  transition:
+    width var(--island-morph) var(--island-spring),
+    height var(--island-morph) var(--island-spring),
+    /* No overshoot here: a spring curve undershoots past 30px, clamps at 0
+       and flashes square corners in the middle of the morph. */
+    border-radius 380ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 320ms ease;
+  will-change: width, height, border-radius;
 }
 
 /* Glassmorphic border and specular reflection */
 .island-surface {
   background-color: #000000;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.75),
-              0 0 1px 1px rgba(255, 255, 255, 0.08),
-              inset 0 1px 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 16px 36px -10px rgba(0, 0, 0, 0.75),
+    0 0 1px 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.island-capsule[data-mode='expanded'] {
+  box-shadow:
+    0 26px 60px -14px rgba(0, 0, 0, 0.85),
+    0 0 1px 1px rgba(255, 255, 255, 0.1),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/*
+ * Both states are laid out at their own fixed size and centred, so the content
+ * is clipped by the morphing capsule instead of reflowing frame by frame
+ * (text jumping around is what made the old expansion feel broken).
+ */
+.island-layer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center;
+  will-change: opacity, transform;
+}
+
+.island-layer[data-visible='false'] {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  filter: blur(5px);
+  pointer-events: none;
+  transition:
+    opacity 130ms ease-out,
+    transform 200ms var(--island-spring),
+    filter 130ms ease-out;
+}
+
+.island-layer[data-visible='true'] {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  filter: blur(0);
+  pointer-events: auto;
+  /* Content arrives slightly after the shell starts opening - the iOS feel. */
+  transition:
+    opacity 260ms ease-out 110ms,
+    transform 420ms var(--island-spring) 90ms,
+    filter 220ms ease-out 110ms;
 }
 
 /* Ambient glow under island */
 .ambient-glow {
   position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   filter: blur(28px);
-  opacity: 0.35;
-  transition: opacity 0.5s ease, transform 0.5s ease;
   pointer-events: none;
   z-index: -1;
   border-radius: 9999px;
+  transition:
+    width var(--island-morph) var(--island-spring),
+    height var(--island-morph) var(--island-spring),
+    opacity 420ms ease,
+    background-color 600ms ease;
 }
 
 /* Fluid controls interactive bounce */
@@ -57,19 +152,9 @@ body {
   transform: scale(0.92);
 }
 
-/* Custom keyframes */
-@keyframes springMorph {
-  0% { transform: scale(0.96); opacity: 0.85; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
 @keyframes waveBar {
   0% { height: 3px; }
   100% { height: 14px; }
-}
-
-.animate-island-spring {
-  animation: springMorph 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-wave-bar {

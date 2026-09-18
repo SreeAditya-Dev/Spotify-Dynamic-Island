@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MediaState, MediaCommand } from '../types/media';
+import { CAPSULE, CAPSULE_TOP, CapsuleMode, HotRect, capsuleRect } from '../types/island';
 import { CompactCapsule } from './components/CompactCapsule';
 import { ExpandedCapsule } from './components/ExpandedCapsule';
 
@@ -8,19 +9,26 @@ declare global {
   interface Window {
     dynamicIsland: {
       onMediaState: (callback: (state: MediaState) => void) => () => void;
+      onHoverChange: (callback: (hovering: boolean) => void) => () => void;
+      onTogglePinned: (callback: (pinned: boolean) => void) => () => void;
+      onToggleDemo: (callback: () => void) => () => void;
       sendCommand: (cmd: MediaCommand) => Promise<boolean>;
       getInitialState: () => Promise<MediaState>;
-      setIgnoreMouseEvents: (ignore: boolean, forward?: boolean) => void;
+      setHotRect: (rect: HotRect) => void;
+      setPointerLock: (locked: boolean) => void;
       setPinned: (pinned: boolean) => void;
       setDemoMode: (enabled: boolean) => void;
-      expandIsland: () => void;
-      collapseIsland: () => void;
       openSpotifyWeb: () => void;
       minimizeApp: () => void;
       closeApp: () => void;
     };
   }
 }
+
+/** How long the island stays open after the cursor leaves. */
+const COLLAPSE_DELAY_MS = 180;
+/** Matches the capsule morph duration in globals.css. */
+const MORPH_DURATION_MS = 520;
 
 const DEMO_PLAYLIST: Partial<MediaState>[] = [
   {
@@ -71,157 +79,206 @@ export const App: React.FC = () => {
   const [isPinned, setIsPinned] = useState(false);
   const [isDemoActive, setIsDemoActive] = useState(false);
   const [demoIndex, setDemoIndex] = useState(0);
-  const collapseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unmountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Subscribe to Media Updates from Main process
+  // Subscribe to media updates from the main process
   useEffect(() => {
-    if (window.dynamicIsland) {
-      window.dynamicIsland.getInitialState().then((init) => {
-        if (init) setMedia(init);
-      });
+    if (!window.dynamicIsland) return;
 
-      const cleanup = window.dynamicIsland.onMediaState((newState) => {
-        setMedia(newState);
-      });
+    window.dynamicIsland.getInitialState().then((init) => {
+      if (init) setMedia(init);
+    });
 
-      return cleanup;
-    }
+    return window.dynamicIsland.onMediaState(setMedia);
   }, []);
 
-  const handleCommand = (cmd: MediaCommand) => {
-    if (window.dynamicIsland) {
-      window.dynamicIsland.sendCommand(cmd);
-    }
-  };
+  // Hover state is owned by the main process: it hit-tests the OS cursor
+  // against the capsule, so the expansion never fights a resizing window.
+  useEffect(() => {
+    if (!window.dynamicIsland) return;
 
-  const handleMouseEnter = () => {
-    if (collapseTimerRef.current) {
-      clearTimeout(collapseTimerRef.current);
-      collapseTimerRef.current = null;
-    }
-    setIsHovered(true);
-    window.dynamicIsland?.expandIsland();
-  };
-
-  const handleMouseLeave = () => {
-    setIsHovered(false);
-    if (!isPinned) {
-      if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
-      collapseTimerRef.current = setTimeout(() => {
-        window.dynamicIsland?.collapseIsland();
-      }, 350);
-    }
-  };
-
-  const togglePin = () => {
-    const nextPinned = !isPinned;
-    setIsPinned(nextPinned);
-    window.dynamicIsland?.setPinned(nextPinned);
-    if (nextPinned) {
+    return window.dynamicIsland.onHoverChange((hovering) => {
       if (collapseTimerRef.current) {
         clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
       }
-      window.dynamicIsland?.expandIsland();
-    } else if (!isHovered) {
-      window.dynamicIsland?.collapseIsland();
-    }
-  };
 
-  const toggleDemo = () => {
-    if (!isDemoActive) {
-      setIsDemoActive(true);
-      const track = DEMO_PLAYLIST[0];
-      if (window.dynamicIsland) {
-        window.dynamicIsland.setDemoMode(true);
-      }
-      setMedia(prev => ({
-        ...prev,
-        id: 'demo-track',
-        title: track.title!,
-        artist: track.artist!,
-        album: track.album!,
-        artworkUrl: track.artworkUrl!,
-        isPlaying: true,
-        position: 42,
-        duration: track.duration!,
-        source: 'demo',
-        sourceApp: 'Spotify Demo',
-        timestamp: Date.now()
-      }));
-    } else {
-      const nextIdx = (demoIndex + 1) % DEMO_PLAYLIST.length;
-      if (nextIdx === 0) {
-        // Turn off demo
-        setIsDemoActive(false);
-        if (window.dynamicIsland) {
-          window.dynamicIsland.setDemoMode(false);
-        }
+      if (hovering) {
+        setIsHovered(true);
       } else {
-        setDemoIndex(nextIdx);
-        const track = DEMO_PLAYLIST[nextIdx];
-        setMedia(prev => ({
+        collapseTimerRef.current = setTimeout(() => setIsHovered(false), COLLAPSE_DELAY_MS);
+      }
+    });
+  }, []);
+
+  const handleCommand = useCallback((cmd: MediaCommand) => {
+    window.dynamicIsland?.sendCommand(cmd);
+  }, []);
+
+  const togglePin = useCallback(() => {
+    setIsPinned((prev) => {
+      const next = !prev;
+      window.dynamicIsland?.setPinned(next);
+      return next;
+    });
+  }, []);
+
+  const toggleDemo = useCallback(() => {
+    setIsDemoActive((active) => {
+      if (!active) {
+        const track = DEMO_PLAYLIST[0];
+        window.dynamicIsland?.setDemoMode(true);
+        setDemoIndex(0);
+        setMedia((prev) => ({
           ...prev,
+          id: 'demo-track',
           title: track.title!,
           artist: track.artist!,
           album: track.album!,
           artworkUrl: track.artworkUrl!,
-          position: 0,
+          isPlaying: true,
+          position: 42,
           duration: track.duration!,
+          source: 'demo',
+          sourceApp: 'Spotify Demo',
           timestamp: Date.now()
         }));
+        return true;
       }
-    }
-  };
 
-  const isExpanded = isHovered || isPinned;
+      const nextIdx = (demoIndex + 1) % DEMO_PLAYLIST.length;
+      if (nextIdx === 0) {
+        window.dynamicIsland?.setDemoMode(false);
+        return false;
+      }
+
+      setDemoIndex(nextIdx);
+      const track = DEMO_PLAYLIST[nextIdx];
+      setMedia((prev) => ({
+        ...prev,
+        title: track.title!,
+        artist: track.artist!,
+        album: track.album!,
+        artworkUrl: track.artworkUrl!,
+        position: 0,
+        duration: track.duration!,
+        timestamp: Date.now()
+      }));
+      return true;
+    });
+  }, [demoIndex]);
+
+  // Tray menu actions
+  useEffect(() => {
+    if (!window.dynamicIsland) return;
+    const offPin = window.dynamicIsland.onTogglePinned(setIsPinned);
+    const offDemo = window.dynamicIsland.onToggleDemo(() => toggleDemo());
+    return () => {
+      offPin();
+      offDemo();
+    };
+  }, [toggleDemo]);
+
   const hasTrack = Boolean(media.title || media.artist);
+  const isExpanded = isHovered || isPinned;
+  const mode: CapsuleMode = isExpanded ? 'expanded' : hasTrack ? 'compact' : 'idle';
+  const size = CAPSULE[mode];
 
-  // Calculate dynamic dimensions
-  let islandWidth = 240;
-  let islandHeight = 38;
-  let borderRadius = 9999;
+  // Tell the main process where the capsule is, so cursor hit-testing tracks it.
+  useEffect(() => {
+    window.dynamicIsland?.setHotRect(capsuleRect(mode));
+  }, [mode]);
 
-  if (isExpanded) {
-    islandWidth = 450;
-    islandHeight = 195;
-    borderRadius = 28;
-  } else if (!hasTrack) {
-    islandWidth = 155;
-    islandHeight = 34;
-    borderRadius = 9999;
-  }
+  // Keep the expanded layer mounted through the collapse animation so it can
+  // fade out instead of vanishing mid-morph.
+  const [renderExpanded, setRenderExpanded] = useState(false);
+  useEffect(() => {
+    if (unmountTimerRef.current) {
+      clearTimeout(unmountTimerRef.current);
+      unmountTimerRef.current = null;
+    }
+
+    if (isExpanded) {
+      setRenderExpanded(true);
+    } else {
+      unmountTimerRef.current = setTimeout(() => setRenderExpanded(false), MORPH_DURATION_MS);
+    }
+
+    return () => {
+      if (unmountTimerRef.current) clearTimeout(unmountTimerRef.current);
+    };
+  }, [isExpanded]);
+
+  useEffect(() => () => {
+    if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+  }, []);
+
+  // A drag on the seek/volume slider can leave the capsule bounds; hold the
+  // island open and interactive until the button comes back up.
+  useEffect(() => {
+    const release = () => window.dynamicIsland?.setPointerLock(false);
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+      window.removeEventListener('blur', release);
+    };
+  }, []);
 
   return (
-    <main className="relative flex flex-col items-center justify-start w-screen h-screen pt-2 overflow-hidden select-none bg-transparent">
+    <main className="island-stage">
       {/* Ambient reactive backdrop glow */}
       {hasTrack && (
         <div
           className="ambient-glow"
           style={{
-            width: `${islandWidth * 0.85}px`,
-            height: `${islandHeight * 0.85}px`,
-            top: '12px',
+            width: `${size.width * 0.8}px`,
+            height: `${size.height * 0.8}px`,
+            top: `${CAPSULE_TOP + 10}px`,
             backgroundColor: media.isPlaying ? '#1DB954' : '#ffffff',
-            opacity: isExpanded ? 0.35 : 0.2
+            opacity: isExpanded ? 0.32 : 0.18
           }}
         />
       )}
 
-      {/* Main Dynamic Island Capsule */}
+      {/* Main Dynamic Island Capsule - only this morphs, the window never does */}
       <section
         aria-label="Spotify Dynamic Island"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        data-mode={mode}
+        onPointerDown={() => window.dynamicIsland?.setPointerLock(true)}
         style={{
-          width: `${islandWidth}px`,
-          height: `${islandHeight}px`,
-          borderRadius: `${borderRadius}px`,
+          top: `${CAPSULE_TOP}px`,
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          borderRadius: `${size.radius}px`
         }}
-        className="island-container island-surface relative flex items-center justify-center overflow-hidden cursor-default transition-all shadow-2xl"
+        className="island-capsule island-surface"
       >
-        {isExpanded ? (
-          <div className="w-full h-full animate-island-spring">
+        {/* Compact layer: fixed size so it never reflows while the capsule morphs */}
+        <div
+          className="island-layer"
+          data-visible={!isExpanded}
+          style={{
+            width: `${CAPSULE[hasTrack ? 'compact' : 'idle'].width}px`,
+            height: `${CAPSULE[hasTrack ? 'compact' : 'idle'].height}px`
+          }}
+        >
+          <CompactCapsule media={media} hasTrack={hasTrack} />
+        </div>
+
+        {/* Expanded layer */}
+        {renderExpanded && (
+          <div
+            className="island-layer"
+            data-visible={isExpanded}
+            style={{
+              width: `${CAPSULE.expanded.width}px`,
+              height: `${CAPSULE.expanded.height}px`
+            }}
+          >
             <ExpandedCapsule
               media={media}
               onCommand={handleCommand}
@@ -230,10 +287,6 @@ export const App: React.FC = () => {
               onToggleDemo={toggleDemo}
               isDemoActive={isDemoActive}
             />
-          </div>
-        ) : (
-          <div className="w-full h-full transition-opacity duration-200">
-            <CompactCapsule media={media} hasTrack={hasTrack} />
           </div>
         )}
       </section>

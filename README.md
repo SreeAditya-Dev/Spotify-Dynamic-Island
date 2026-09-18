@@ -11,7 +11,8 @@
 
 - **🏝️ iOS-Style Dynamic Island**:
   - **Collapsed Capsule**: Sleek, minimalist pill centered at the top of your screen showing mini album art, scrolling track name & artist, and a live bouncy audio wave visualizer.
-  - **Expanded Capsule**: Hovering expands the pill into an interactive media player with butter-smooth 120fps spring physics (`cubic-bezier(0.16, 1, 0.3, 1)`).
+  - **Expanded Capsule**: Hovering expands the pill into an interactive media player with butter-smooth spring physics (`cubic-bezier(0.32, 1.32, 0.4, 1)`).
+  - **Fixed-stage morphing**: The Electron window is a fixed, fully click-through canvas that never resizes. Only the capsule inside it animates, so the expansion runs entirely on the compositor instead of fighting OS window resizes. Hover is detected by hit-testing the OS cursor against the capsule's live rectangle, and the window is flipped interactive only while the cursor is actually over it.
 - **⚡ Zero Lag & Low RAM Footprint**:
   - Engineered with GPU rasterization, CSS hardware-accelerated transforms, and a lightweight persistent media daemon consuming **<60MB RAM** (compared to typical 300MB+ Electron apps).
 - **🖱️ True Click-Through Background**:
@@ -78,8 +79,8 @@ spotify-dynamic-island/
 │   └── background.js
 ├── src/
 │   ├── main/
-│   │   ├── index.ts                # Transparent frameless Electron window, click-through IPC
-│   │   ├── preload.ts              # Secure contextBridge API
+│   │   ├── index.ts                # Fixed transparent stage window, cursor hit-testing, click-through IPC
+│   │   ├── preload.ts              # Secure contextBridge API (built as CommonJS preload.cjs)
 │   │   └── services/
 │   │       ├── mediaManager.ts     # Multi-source coordinator (OS SMTC + Browser Extension)
 │   │       ├── windowsSmtc.ts      # Persistent Windows GSMTC PowerShell daemon
@@ -87,6 +88,8 @@ spotify-dynamic-island/
 │   │       ├── macMedia.ts         # macOS AppleScript media controller
 │   │       ├── webSocketBridge.ts  # Localhost WebSocket bridge for browser extension
 │   │       └── artworkResolver.ts  # High-resolution 600x600 album artwork caching engine
+│   ├── types/
+│   │   └── island.ts               # Shared capsule geometry (main + renderer single source of truth)
 │   └── renderer/
 │       ├── App.tsx                 # Dynamic Island state machine & fluid spring morphing
 │       ├── components/

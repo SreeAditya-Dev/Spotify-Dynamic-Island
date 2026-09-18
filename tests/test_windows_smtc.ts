@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 
 async function testWindowsSmtc() {
@@ -12,6 +13,24 @@ async function testWindowsSmtc() {
   const scriptPath = path.join(process.cwd(), 'src', 'main', 'services', 'windows-smtc-daemon.ps1');
   console.log(`Spawning daemon: ${scriptPath}`);
 
+  // Guard the WinRT names that fail *silently*: a wrong type or property just
+  // yields $null inside a try/catch, so the daemon keeps reporting state while
+  // artwork and the source app name are quietly always empty.
+  const source = fs.readFileSync(scriptPath, 'utf8');
+  if (/\.SourceAppId\b/.test(source)) {
+    throw new Error('Daemon uses SourceAppId; the real property is SourceAppUserModelId');
+  }
+  if (!source.includes('SourceAppUserModelId')) {
+    throw new Error('Daemon never reads SourceAppUserModelId');
+  }
+  if (source.includes('System.IO.WindowsRuntimeSystemExtensions')) {
+    throw new Error('Daemon uses System.IO.WindowsRuntimeSystemExtensions, which does not exist');
+  }
+  if (!source.includes('System.IO.WindowsRuntimeStreamExtensions')) {
+    throw new Error('Daemon never resolves System.IO.WindowsRuntimeStreamExtensions for thumbnails');
+  }
+  console.log('[PASS] Daemon uses the correct WinRT type and property names');
+
   const ps = spawn('powershell.exe', [
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
@@ -23,6 +42,10 @@ async function testWindowsSmtc() {
 
   let isReady = false;
   let receivedState: any = null;
+  let stderrText = '';
+  ps.stderr.on('data', (chunk) => {
+    stderrText += chunk.toString('utf8');
+  });
 
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -76,6 +99,11 @@ async function testWindowsSmtc() {
     }
   }
   console.log('[PASS] Validated all required GSMTC schema fields');
+
+  if (stderrText.trim()) {
+    throw new Error(`Daemon wrote to stderr (silent breakage): ${stderrText.trim().split('\n')[0]}`);
+  }
+  console.log('[PASS] Daemon ran without PowerShell errors');
 
   // Test clean shutdown
   ps.stdin.write('EXIT\n');

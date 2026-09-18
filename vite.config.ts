@@ -28,6 +28,15 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/preload',
+            // The package is "type": "module", so vite-plugin-electron would
+            // emit the preload as ESM - which Electron silently refuses to
+            // load, leaving window.dynamicIsland undefined and killing every
+            // interaction. Force CommonJS with a .cjs extension.
+            lib: {
+              entry: 'src/main/preload.ts',
+              formats: ['cjs'],
+              fileName: () => 'preload.cjs',
+            },
           },
         },
       },

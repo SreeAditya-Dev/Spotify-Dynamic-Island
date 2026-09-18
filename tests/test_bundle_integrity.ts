@@ -17,15 +17,31 @@ async function testBundleIntegrity() {
 
   // Check 2: Electron Main and Preload bundles
   const mainBundle = path.join(process.cwd(), 'dist-electron', 'main', 'index.js');
-  const preloadBundle = path.join(process.cwd(), 'dist-electron', 'preload', 'preload.js');
+  const preloadBundle = path.join(process.cwd(), 'dist-electron', 'preload', 'preload.cjs');
   if (!fs.existsSync(mainBundle)) {
     throw new Error('dist-electron/main/index.js is missing');
   }
   if (!fs.existsSync(preloadBundle)) {
-    throw new Error('dist-electron/preload/preload.js is missing');
+    throw new Error('dist-electron/preload/preload.cjs is missing');
   }
   console.log(`[PASS] Electron Main Bundle: ${(fs.statSync(mainBundle).size / 1024).toFixed(1)} KB`);
   console.log(`[PASS] Electron Preload Bundle: ${(fs.statSync(preloadBundle).size / 1024).toFixed(1)} KB`);
+
+  // Check 2b: the preload MUST be CommonJS. Electron silently refuses to load
+  // an ESM preload, which leaves window.dynamicIsland undefined and kills every
+  // interaction (hover expansion, playback controls, media updates).
+  const preloadSource = fs.readFileSync(preloadBundle, 'utf8');
+  if (/^\s*import\s|^\s*export\s/m.test(preloadSource)) {
+    throw new Error('Preload bundle contains ESM syntax - Electron will not load it');
+  }
+  if (!preloadSource.includes('require(')) {
+    throw new Error('Preload bundle is not CommonJS (no require call found)');
+  }
+  const mainSource = fs.readFileSync(mainBundle, 'utf8');
+  if (!mainSource.includes('preload.cjs')) {
+    throw new Error('Main bundle does not point at preload.cjs');
+  }
+  console.log('[PASS] Preload bundle is CommonJS and wired into the main bundle');
 
   // Check 3: Browser Extension Manifest V3
   const manifestPath = path.join(process.cwd(), 'extension', 'manifest.json');

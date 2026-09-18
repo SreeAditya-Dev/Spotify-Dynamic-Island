@@ -3,7 +3,10 @@
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | ? { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
-$asStreamMethod = [System.IO.WindowsRuntimeSystemExtensions].GetMethods() | ? { $_.Name -eq 'AsStream' -and $_.GetParameters().Count -eq 1 } | Select-Object -First 1
+# NOTE: the type is WindowsRuntimeStreamExtensions. WindowsRuntimeSystemExtensions
+# does not exist, and looking it up left $asStreamMethod null, so album artwork
+# could never be read from the media session.
+$global:asStreamMethod = [System.IO.WindowsRuntimeStreamExtensions].GetMethods() | ? { $_.Name -eq 'AsStream' -and $_.GetParameters().Count -eq 1 } | Select-Object -First 1
 
 function AwaitTask($winRtOp, $resultType) {
     if ($null -eq $winRtOp) { return $null }
@@ -16,9 +19,36 @@ function AwaitTask($winRtOp, $resultType) {
 [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime] | Out-Null
 $global:mgr = AwaitTask ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
 
-$global:lastTitle = ""
-$global:lastArtist = ""
+$global:lastTrackKey = ""
 $global:cachedThumb = ""
+
+# Thumbnails are embedded as base64 data URIs, so they must never be re-sent on
+# every poll - some apps publish multi-megabyte covers. Anything above this is
+# dropped and the app falls back to its online artwork lookup.
+$global:maxThumbBytes = 900000
+
+function ReadThumbnail($media) {
+    try {
+        if ($null -eq $media -or $null -eq $media.Thumbnail) { return "" }
+        $stream = AwaitTask ($media.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
+        # NOTE: do not gate on $stream.Size - PowerShell does not project that
+        # property, so it reads as $null and skipped every thumbnail.
+        if ($null -eq $stream) { return "" }
+        if ($null -eq $global:asStreamMethod) { return "" }
+
+        $netStream = $global:asStreamMethod.Invoke($null, @($stream))
+        $ms = New-Object System.IO.MemoryStream
+        $netStream.CopyTo($ms)
+        $bytes = $ms.ToArray()
+        if ($bytes.Length -le 0 -or $bytes.Length -gt $global:maxThumbBytes) { return "" }
+
+        $contentType = "image/jpeg"
+        try { if ($stream.ContentType) { $contentType = $stream.ContentType } } catch {}
+        return "data:$contentType;base64,$([Convert]::ToBase64String($bytes))"
+    } catch {
+        return ""
+    }
+}
 
 function GetBestMediaSession() {
     try {
@@ -32,29 +62,56 @@ function GetBestMediaSession() {
         $bestSession = $null
         $bestScore = -1
 
+        # The OS tracks which session the user last interacted with; use it to
+        # break ties between two equally-scoring sessions.
+        $currentId = ""
+        try {
+            $cur = $global:mgr.GetCurrentSession()
+            if ($null -ne $cur) { $currentId = "$($cur.SourceAppUserModelId)" }
+        } catch {}
+
         for ($i = 0; $i -lt $total; $i++) {
             $s = $sessionList[$i]
             if ($null -eq $s) { continue }
             $info = $s.GetPlaybackInfo()
             $status = if ($info) { "$($info.PlaybackStatus)".ToLower() } else { "" }
-            
+
+            # Playing outranks everything else. Metadata and app bonuses only
+            # decide between sessions in the same playback state - otherwise a
+            # paused browser tab could outrank whatever is actually playing.
             $score = 0
-            if ($status -eq "playing") { $score += 100 }
+            if ($status -eq "playing") { $score += 1000 }
 
             $title = ""
             $artist = ""
+            $album = ""
             try {
                 $props = AwaitTask ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
                 if ($null -ne $props) {
                     $title = "$($props.Title)"
                     $artist = "$($props.Artist)"
+                    $album = "$($props.AlbumTitle)"
                 }
             } catch {}
 
-            $app = "$($s.SourceAppId)".ToLower()
+            # NOTE: SourceAppUserModelId is the real property. SourceAppId does
+            # not exist, so this was always empty and no app bonus ever applied.
+            $appId = "$($s.SourceAppUserModelId)"
+            $app = $appId.ToLower()
+
             if (![string]::IsNullOrEmpty($title)) { $score += 10 }
             if (![string]::IsNullOrEmpty($artist)) { $score += 30 }
-            if ($title.ToLower().Contains("spotify") -or $app.Contains("spotify")) { $score += 50 }
+            if (![string]::IsNullOrEmpty($album)) { $score += 5 }
+
+            if ($title.ToLower().Contains("spotify") -or $app.Contains("spotify")) {
+                $score += 200
+            } elseif ($app -match "chrome|msedge|firefox|brave|opera|vivaldi|chromium") {
+                # A song in a browser should beat a generic video/media player
+                # that exposes no artist metadata.
+                $score += 50
+            }
+
+            if (![string]::IsNullOrEmpty($currentId) -and $appId -eq $currentId) { $score += 20 }
 
             if ($score -gt $bestScore) {
                 $bestScore = $score
@@ -83,7 +140,7 @@ function GetSessionMediaState() {
             return '{"isPlaying":false,"title":"","artist":"","album":"","source":"none","position":0,"duration":0,"artworkUrl":""}'
         }
 
-        $appId = "$($session.SourceAppId)"
+        $appId = "$($session.SourceAppUserModelId)"
         $playback = $session.GetPlaybackInfo()
         $status = "$($playback.PlaybackStatus)".ToLower()
         $isPlaying = ($status -eq "playing")
@@ -106,33 +163,22 @@ function GetSessionMediaState() {
             $album = "$($media.AlbumTitle)"
         }
 
-        if ($title -ne $global:lastTitle -or $artist -ne $global:lastArtist -or [string]::IsNullOrEmpty($global:cachedThumb)) {
-            $global:cachedThumb = ""
-            if ($null -ne $media -and $null -ne $media.Thumbnail) {
-                try {
-                    $stream = AwaitTask ($media.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
-                    if ($null -ne $stream -and $stream.Size -gt 0) {
-                        $netStream = $global:asStreamMethod.Invoke($null, @($stream))
-                        $ms = New-Object System.IO.MemoryStream
-                        $netStream.CopyTo($ms)
-                        $bytes = $ms.ToArray()
-                        if ($bytes.Length -gt 0) {
-                            $base64 = [Convert]::ToBase64String($bytes)
-                            $contentType = if ($stream.ContentType) { $stream.ContentType } else { "image/jpeg" }
-                            $global:cachedThumb = "data:$contentType;base64,$base64"
-                        }
-                    }
-                } catch {}
-            }
-            $global:lastTitle = $title
-            $global:lastArtist = $artist
+        # Only read - and only transmit - artwork when the track actually
+        # changes. Every other poll reports an empty artworkUrl and the app
+        # keeps showing the cover it already has.
+        $trackKey = "$title|$artist|$album"
+        $artPayload = ""
+        if ($trackKey -ne $global:lastTrackKey) {
+            $global:lastTrackKey = $trackKey
+            $global:cachedThumb = ReadThumbnail $media
+            $artPayload = $global:cachedThumb
         }
 
         $cleanTitle = $title.Replace('\', '\\').Replace('"', '\"').Replace("`n", ' ').Replace("`r", '')
         $cleanArtist = $artist.Replace('\', '\\').Replace('"', '\"').Replace("`n", ' ').Replace("`r", '')
         $cleanAlbum = $album.Replace('\', '\\').Replace('"', '\"').Replace("`n", ' ').Replace("`r", '')
         $cleanApp = $appId.Replace('\', '\\').Replace('"', '\"')
-        $cleanThumb = $global:cachedThumb
+        $cleanThumb = $artPayload
 
         $json = "{" +
             """isPlaying"":$($isPlaying.ToString().ToLower())," +

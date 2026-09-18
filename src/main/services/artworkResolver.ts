@@ -46,5 +46,8 @@ export async function resolveArtwork(title: string, artist: string, fallbackThum
     return fallbackThumb;
   }
 
+  // Cache the miss too. Without this, a track with no iTunes match (podcasts,
+  // videos, live streams) re-fetched on every single poll.
+  cache.set(cacheKey, '');
   return '';
 }
