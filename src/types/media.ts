@@ -20,6 +20,8 @@ export interface MediaState {
   isMuted?: boolean;
   shuffle?: boolean;
   repeat?: 'off' | 'track' | 'context';
+  /** Whether the current session accepts a seek at all. */
+  canSeek?: boolean;
   timestamp: number; // Date.now() when state was captured
 }
 

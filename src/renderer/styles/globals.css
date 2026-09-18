@@ -194,3 +194,184 @@ input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 9999px;
 }
+
+/* ------------------------------------------------------------------ */
+/* Timeline scrubber                                                    */
+/* The old scrubber was a 1px line with a fully transparent range input */
+/* over it: no handle, nothing to aim at, and a 4px hit area.           */
+/* ------------------------------------------------------------------ */
+.island-scrubber {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 16px; /* generous hit area; the visible track stays thin */
+}
+
+.island-scrubber-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+  transition: height 140ms ease;
+}
+
+.island-scrubber:hover .island-scrubber-track {
+  height: 6px;
+}
+
+.island-scrubber-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: #ffffff;
+  transition: background-color 140ms ease;
+}
+
+.island-scrubber:hover .island-scrubber-fill {
+  background: #1ed760;
+}
+
+.island-scrubber-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  transform: translateY(-50%) scale(0);
+  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+.island-scrubber:hover .island-scrubber-thumb,
+.island-scrubber:focus-within .island-scrubber-thumb {
+  transform: translateY(-50%) scale(1);
+}
+
+/* The real control: invisible, but full-size so the whole row is draggable. */
+.island-scrubber-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.island-scrubber.is-disabled {
+  opacity: 0.45;
+}
+
+.island-scrubber.is-disabled .island-scrubber-input {
+  cursor: not-allowed;
+}
+
+.island-scrubber.is-disabled .island-scrubber-thumb {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Volume                                                              */
+/* ------------------------------------------------------------------ */
+.island-volume {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* The panel sits directly on top of the button and turns the old 8px gap into
+   transparent padding, so moving the pointer from button to slider never
+   crosses a dead zone that would dismiss it. */
+.island-volume-panel {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  padding-bottom: 8px;
+  z-index: 50;
+  opacity: 0;
+  transform: translateY(6px) scale(0.96);
+  transform-origin: bottom right;
+  pointer-events: none;
+  transition:
+    opacity 150ms ease,
+    transform 220ms cubic-bezier(0.32, 1.32, 0.4, 1);
+}
+
+.island-volume-panel[data-open='true'] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.island-volume-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(18, 18, 18, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.8);
+}
+
+.island-volume-slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 108px;
+  height: 16px;
+}
+
+.island-volume-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+
+.island-volume-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: #1ed760;
+}
+
+.island-volume-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  transform: translateY(-50%);
+  transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+.island-volume-slider:hover .island-volume-thumb {
+  transform: translateY(-50%) scale(1.15);
+}
+
+.island-volume-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.island-volume-value {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: #d4d4d4;
+  width: 30px;
+  text-align: right;
+}

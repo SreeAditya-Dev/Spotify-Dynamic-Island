@@ -33,12 +33,26 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
   const [scrubVal, setScrubVal] = useState(media.position);
   const [showVolume, setShowVolume] = useState(false);
   const [localVolume, setLocalVolume] = useState(media.volume ?? 80);
+  const volumeSettleUntil = useRef(0);
+
+  // Track the system volume when it changes elsewhere, but never fight the
+  // user's own drag.
+  useEffect(() => {
+    if (typeof media.volume !== 'number') return;
+    if (performance.now() < volumeSettleUntil.current) return;
+    setLocalVolume(media.isMuted ? 0 : media.volume);
+  }, [media.volume, media.isMuted]);
+
+  // SMTC reports position as an infrequent snapshot, so for a second or two
+  // after a seek the app still echoes the OLD position. Without this guard the
+  // scrubber visibly snaps back to where the track was before the drag.
+  const seekSettleUntil = useRef(0);
 
   // Sync state with parent updates
   useEffect(() => {
-    if (!isScrubbing) {
-      setLocalPos(media.position);
-    }
+    if (isScrubbing) return;
+    if (performance.now() < seekSettleUntil.current) return;
+    setLocalPos(media.position);
   }, [media.position, isScrubbing]);
 
   // Butter-smooth 60fps elapsed time interpolation when playing
@@ -72,18 +86,31 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
   };
 
   const handleSeekCommit = () => {
+    if (!isScrubbing) return;
     setIsScrubbing(false);
     setLocalPos(scrubVal);
+    // Hold our own position until the OS catches up with the new one.
+    seekSettleUntil.current = performance.now() + 2500;
     onCommand({ type: 'seek', position: scrubVal });
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const vol = Number(e.target.value);
     setLocalVolume(vol);
+    volumeSettleUntil.current = performance.now() + 1500;
     onCommand({ type: 'volume', volume: vol });
   };
 
+  const toggleMute = () => {
+    const next = localVolume === 0 ? 70 : 0;
+    setLocalVolume(next);
+    volumeSettleUntil.current = performance.now() + 1500;
+    onCommand({ type: 'volume', volume: next });
+  };
+
   const currentDisplayPos = isScrubbing ? scrubVal : localPos;
+  // Only offer the scrubber when the session actually accepts a seek.
+  const seekable = media.canSeek !== false && media.duration > 0;
   const progressPercent = media.duration > 0 ? Math.min(100, (currentDisplayPos / media.duration) * 100) : 0;
 
   if (!media.title && !media.artist) {
@@ -211,24 +238,39 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
 
       {/* Timeline Scrubber */}
       <div className="w-full px-0.5 mt-1">
-        <div className="relative flex items-center w-full group py-1">
-          {/* Custom Track Background */}
-          <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden">
+        <div
+          className={`island-scrubber group ${seekable ? '' : 'is-disabled'}`}
+          title={seekable ? 'Drag to seek' : 'This app does not allow seeking'}
+        >
+          {/* Track + played portion */}
+          <div className="island-scrubber-track">
             <div
-              className="h-full bg-white group-hover:bg-spotify-green transition-all duration-100 rounded-full"
+              className="island-scrubber-fill"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          {/* Interactive Range Input */}
+
+          {/* Visible handle - the old scrubber had none, so there was nothing
+              to grab and no feedback that it was draggable at all. */}
+          <div
+            className="island-scrubber-thumb"
+            style={{ left: `${progressPercent}%` }}
+          />
+
+          {/* Interactive range input, stretched over the whole row */}
           <input
             type="range"
             min={0}
             max={media.duration || 100}
+            step={0.5}
             value={currentDisplayPos}
+            disabled={!seekable}
+            aria-label="Seek"
             onChange={handleSeekChange}
-            onMouseUp={handleSeekCommit}
-            onTouchEnd={handleSeekCommit}
-            className="absolute inset-0 w-full h-4 opacity-0 cursor-pointer"
+            onPointerUp={handleSeekCommit}
+            onKeyUp={handleSeekCommit}
+            onBlur={handleSeekCommit}
+            className="island-scrubber-input"
           />
         </div>
 
@@ -301,12 +343,15 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
             )}
           </button>
 
-          {/* Volume toggle */}
-          <div className="relative">
+          {/* Volume: icon toggles mute, the slider sets the level */}
+          {/* Click opens the slider, moving away dismisses it. Opening on hover
+              as well would fight the click and toggle it straight back shut. */}
+          <div className="island-volume" onPointerLeave={() => setShowVolume(false)}>
             <button
-              onClick={() => setShowVolume(!showVolume)}
+              onClick={() => setShowVolume((v) => !v)}
+              onDoubleClick={toggleMute}
               className="p-2 text-neutral-400 hover:text-white interactive-btn"
-              title="Volume"
+              title="Volume (double-click to mute)"
             >
               {localVolume === 0 ? (
                 <VolumeX className="w-4 h-4 text-neutral-500" />
@@ -315,22 +360,32 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
               )}
             </button>
 
-            {/* Floating volume popup */}
-            {showVolume && (
-              <div className="absolute bottom-full right-0 mb-2 p-2 bg-neutral-900/95 border border-white/15 rounded-xl shadow-xl flex items-center gap-2 z-50">
+            <div className="island-volume-panel" data-open={showVolume}>
+              <div className="island-volume-card">
+              <div className="island-volume-slider group">
+                <div className="island-volume-track">
+                  <div
+                    className="island-volume-fill"
+                    style={{ width: `${localVolume}%` }}
+                  />
+                </div>
+                <div
+                  className="island-volume-thumb"
+                  style={{ left: `${localVolume}%` }}
+                />
                 <input
                   type="range"
                   min={0}
                   max={100}
                   value={localVolume}
+                  aria-label="Volume"
                   onChange={handleVolumeChange}
-                  className="w-20 h-1 bg-neutral-700 rounded-full accent-spotify-green"
+                  className="island-volume-input"
                 />
-                <span className="text-[10px] font-mono text-neutral-300 w-6">
-                  {localVolume}%
-                </span>
               </div>
-            )}
+              <span className="island-volume-value">{localVolume}%</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

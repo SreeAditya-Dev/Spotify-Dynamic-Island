@@ -2,7 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
-import { MediaState } from '../../types/media';
+import { MediaState, MediaCommand } from '../../types/media';
 import { resolveArtwork } from './artworkResolver';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -128,6 +128,17 @@ export class WindowsSmtcService extends EventEmitter {
                   duration: Number(rawData.duration) || 0,
                   source: isSpotify ? 'spotify-desktop' : 'browser',
                   sourceApp: friendlyAppName(appId),
+                  canSeek: Boolean(rawData.canSeek),
+                  volume:
+                    typeof rawData.volume === 'number' && rawData.volume >= 0
+                      ? rawData.volume
+                      : undefined,
+                  isMuted: Boolean(rawData.isMuted),
+                  shuffle: Boolean(rawData.shuffle),
+                  repeat:
+                    rawData.repeat === 'track' || rawData.repeat === 'context'
+                      ? rawData.repeat
+                      : 'off',
                   timestamp: rawData.timestamp || Date.now()
                 };
 
@@ -179,10 +190,21 @@ export class WindowsSmtcService extends EventEmitter {
     }, 4000);
   }
 
-  public sendCommand(cmd: string): boolean {
+  /**
+   * Commands that carry a value are serialised as "name:value" - the daemon
+   * splits on the first colon. Seek is sent in seconds, volume as 0-100.
+   */
+  private static serialize(cmd: MediaCommand): string {
+    if (typeof cmd === 'string') return cmd.toLowerCase();
+    if (cmd.type === 'seek') return `seek:${Math.max(0, Math.round(cmd.position * 10) / 10)}`;
+    if (cmd.type === 'volume') return `volume:${Math.round(Math.min(100, Math.max(0, cmd.volume)))}`;
+    return String((cmd as { type: string }).type).toLowerCase();
+  }
+
+  public sendCommand(cmd: MediaCommand): boolean {
     if (!this.isAlive || !this.psProcess || !this.psProcess.stdin) return false;
     try {
-      this.psProcess.stdin.write(`CMD:${cmd}\n`);
+      this.psProcess.stdin.write(`CMD:${WindowsSmtcService.serialize(cmd)}\n`);
       return true;
     } catch {
       return false;

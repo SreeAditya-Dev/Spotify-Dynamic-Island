@@ -1,7 +1,11 @@
 import WebSocket from 'ws';
+import { WebSocketBridgeService } from '../src/main/services/webSocketBridge';
 
 async function testWebSocketBridge() {
   console.log('--- TEST 2: Browser Extension WebSocket Bridge ---');
+
+  const bridge = new WebSocketBridgeService();
+  bridge.start();
 
   const ws = new WebSocket('ws://localhost:9876');
 
@@ -56,6 +60,7 @@ async function testWebSocketBridge() {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   ws.close();
+  bridge.stop();
   console.log('[PASS] WebSocket clean close verified');
   console.log('--- TEST 2 PASSED ---\n');
 }

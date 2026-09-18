@@ -138,11 +138,15 @@ export class MediaManager extends EventEmitter {
       if (handled) return true;
     }
 
-    // Otherwise route to OS Media Session
-    const cmdName = typeof cmd === 'string' ? cmd : cmd.type;
+    // Otherwise route to OS Media Session. The full command is forwarded -
+    // collapsing it to cmd.type here used to drop the seek position and the
+    // volume level, so those two commands silently did nothing.
     if (this.windowsSmtc) {
-      return this.windowsSmtc.sendCommand(cmdName);
-    } else if (this.linuxMpris) {
+      return this.windowsSmtc.sendCommand(cmd);
+    }
+
+    const cmdName = typeof cmd === 'string' ? cmd : cmd.type;
+    if (this.linuxMpris) {
       return this.linuxMpris.sendCommand(cmdName);
     } else if (this.macMedia) {
       return this.macMedia.sendCommand(cmdName);

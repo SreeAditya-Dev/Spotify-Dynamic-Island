@@ -19,6 +19,82 @@ function AwaitTask($winRtOp, $resultType) {
 [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime] | Out-Null
 $global:mgr = AwaitTask ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
 
+# --- System volume via Core Audio (SMTC exposes no volume of its own) ---
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IAudioEndpointVolume {
+    int RegisterControlChangeNotify(IntPtr pNotify);
+    int UnregisterControlChangeNotify(IntPtr pNotify);
+    int GetChannelCount(out uint pnChannelCount);
+    int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);
+    int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
+    int GetMasterVolumeLevel(out float pfLevelDB);
+    int GetMasterVolumeLevelScalar(out float pfLevel);
+    int SetChannelVolumeLevel(uint nChannel, float fLevelDB, ref Guid pguidEventContext);
+    int SetChannelVolumeLevelScalar(uint nChannel, float fLevel, ref Guid pguidEventContext);
+    int GetChannelVolumeLevel(uint nChannel, out float pfLevelDB);
+    int GetChannelVolumeLevelScalar(uint nChannel, out float pfLevel);
+    int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid pguidEventContext);
+    int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+}
+
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IMMDevice {
+    int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+}
+
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IMMDeviceEnumerator {
+    int EnumAudioEndpoints(int dataFlow, int dwStateMask, IntPtr ppDevices);
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppEndpoint);
+}
+
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+public class MMDeviceEnumeratorComObject { }
+
+public static class SystemVolume {
+    private static IAudioEndpointVolume Endpoint() {
+        var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+        IMMDevice device;
+        // eRender (0), eMultimedia (1)
+        Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(0, 1, out device));
+        var iid = typeof(IAudioEndpointVolume).GUID;
+        object obj;
+        Marshal.ThrowExceptionForHR(device.Activate(ref iid, 23 /* CLSCTX_ALL */, IntPtr.Zero, out obj));
+        return (IAudioEndpointVolume)obj;
+    }
+
+    public static int Get() {
+        float level;
+        Marshal.ThrowExceptionForHR(Endpoint().GetMasterVolumeLevelScalar(out level));
+        return (int)Math.Round(level * 100f);
+    }
+
+    public static void Set(int percent) {
+        if (percent < 0) percent = 0;
+        if (percent > 100) percent = 100;
+        var empty = Guid.Empty;
+        Marshal.ThrowExceptionForHR(Endpoint().SetMasterVolumeLevelScalar(percent / 100f, ref empty));
+    }
+
+    public static bool GetMute() {
+        bool muted;
+        Marshal.ThrowExceptionForHR(Endpoint().GetMute(out muted));
+        return muted;
+    }
+
+    public static void SetMute(bool muted) {
+        var empty = Guid.Empty;
+        Marshal.ThrowExceptionForHR(Endpoint().SetMute(muted, ref empty));
+    }
+}
+"@
+
+$global:volumeAvailable = $null -ne ('SystemVolume' -as [type])
+
 $global:lastTrackKey = ""
 $global:cachedThumb = ""
 
@@ -180,6 +256,34 @@ function GetSessionMediaState() {
         $cleanApp = $appId.Replace('\', '\\').Replace('"', '\"')
         $cleanThumb = $artPayload
 
+        # Whether this session actually accepts a seek, so the UI can show the
+        # scrubber as disabled instead of silently swallowing drags.
+        $canSeek = $false
+        try {
+            $controls = $playback.Controls
+            if ($null -ne $controls) { $canSeek = [bool]$controls.IsPlaybackPositionEnabled }
+        } catch {}
+
+        $volume = -1
+        $muted = $false
+        if ($global:volumeAvailable) {
+            try {
+                $volume = [SystemVolume]::Get()
+                $muted = [SystemVolume]::GetMute()
+            } catch {}
+        }
+
+        $shuffle = $false
+        try { if ($null -ne $playback.IsShuffleActive) { $shuffle = [bool]$playback.IsShuffleActive } } catch {}
+        $repeat = "off"
+        try {
+            if ($null -ne $playback.AutoRepeatMode) {
+                $m = "$($playback.AutoRepeatMode)".ToLower()
+                if ($m -eq "list") { $repeat = "context" } elseif ($m -eq "track") { $repeat = "track" }
+            }
+        } catch {}
+
+
         $json = "{" +
             """isPlaying"":$($isPlaying.ToString().ToLower())," +
             """status"":""$status""," +
@@ -190,6 +294,11 @@ function GetSessionMediaState() {
             """position"":$pos," +
             """duration"":$end," +
             """artworkUrl"":""$cleanThumb""," +
+            """canSeek"":$($canSeek.ToString().ToLower())," +
+            """volume"":$volume," +
+            """isMuted"":$($muted.ToString().ToLower())," +
+            """shuffle"":$($shuffle.ToString().ToLower())," +
+            """repeat"":""$repeat""," +
             """timestamp"":$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())" +
         "}"
 
@@ -201,16 +310,69 @@ function GetSessionMediaState() {
 
 function ExecuteCommand($cmd) {
     try {
+        # Commands carrying a value arrive as "name:value" (e.g. "seek:93.5").
+        $raw = "$cmd".Trim()
+        $name = $raw
+        $arg = ""
+        $sep = $raw.IndexOf(":")
+        if ($sep -ge 0) {
+            $name = $raw.Substring(0, $sep)
+            $arg = $raw.Substring($sep + 1)
+        }
+        $name = $name.ToLower()
+
+        # Volume is a system-wide concern; it has no media session to act on.
+        if ($name -eq "volume") {
+            if (-not $global:volumeAvailable) { return $false }
+            $pct = 0
+            if ([int]::TryParse($arg, [ref]$pct)) {
+                [SystemVolume]::Set($pct)
+                if ($pct -gt 0) { [SystemVolume]::SetMute($false) }
+                return $true
+            }
+            return $false
+        }
+        if ($name -eq "mute") {
+            if (-not $global:volumeAvailable) { return $false }
+            [SystemVolume]::SetMute(-not [SystemVolume]::GetMute())
+            return $true
+        }
+
         $session = GetBestMediaSession
         if ($null -eq $session) { return $false }
 
-        switch ($cmd.Trim().ToLower()) {
+        switch ($name) {
             "play" { AwaitTask ($session.TryPlayAsync()) ([bool]) | Out-Null; return $true }
             "pause" { AwaitTask ($session.TryPauseAsync()) ([bool]) | Out-Null; return $true }
             "toggle" { AwaitTask ($session.TryTogglePlayPauseAsync()) ([bool]) | Out-Null; return $true }
             "next" { AwaitTask ($session.TrySkipNextAsync()) ([bool]) | Out-Null; return $true }
             "previous" { AwaitTask ($session.TrySkipPreviousAsync()) ([bool]) | Out-Null; return $true }
             "prev" { AwaitTask ($session.TrySkipPreviousAsync()) ([bool]) | Out-Null; return $true }
+            "seek" {
+                $seconds = 0.0
+                if (-not [double]::TryParse($arg, [ref]$seconds)) { return $false }
+                # TryChangePlaybackPositionAsync takes 100-nanosecond ticks.
+                $ticks = [long]([Math]::Max(0, $seconds) * 10000000)
+                AwaitTask ($session.TryChangePlaybackPositionAsync($ticks)) ([bool]) | Out-Null
+                return $true
+            }
+            "toggleshuffle" {
+                $info = $session.GetPlaybackInfo()
+                $current = $false
+                try { if ($null -ne $info.IsShuffleActive) { $current = [bool]$info.IsShuffleActive } } catch {}
+                AwaitTask ($session.TryChangeShuffleActiveAsync(-not $current)) ([bool]) | Out-Null
+                return $true
+            }
+            "togglerepeat" {
+                $info = $session.GetPlaybackInfo()
+                $mode = "none"
+                try { if ($null -ne $info.AutoRepeatMode) { $mode = "$($info.AutoRepeatMode)".ToLower() } } catch {}
+                # none -> list -> track -> none
+                $next = 1
+                if ($mode -eq "list") { $next = 2 } elseif ($mode -eq "track") { $next = 0 }
+                AwaitTask ($session.TryChangeAutoRepeatModeAsync($next)) ([bool]) | Out-Null
+                return $true
+            }
         }
     } catch {}
     return $false

@@ -159,6 +159,41 @@ async function testMediaManager() {
   }
   console.log('[PASS] Repeat toggle verified');
 
+  // --- Command payloads must survive the trip to the OS layer ---
+  // sendCommand used to collapse {type:'seek', position} down to the string
+  // 'seek', so the position (and the volume level) never reached the daemon and
+  // both controls silently did nothing.
+  manager.setDemoMode(false);
+  const sent: any[] = [];
+  (manager as any).windowsSmtc = {
+    sendCommand: (cmd: any) => {
+      sent.push(cmd);
+      return true;
+    },
+    stop: () => {}
+  };
+  (manager as any).currentState = { ...(manager as any).currentState, source: 'browser' };
+
+  manager.sendCommand({ type: 'seek', position: 137.5 });
+  const seekCmd = sent.at(-1);
+  if (typeof seekCmd !== 'object' || seekCmd.type !== 'seek' || seekCmd.position !== 137.5) {
+    throw new Error(`Seek payload was lost on the way to the OS layer: ${JSON.stringify(seekCmd)}`);
+  }
+  console.log('[PASS] Seek position reaches the OS media layer intact');
+
+  manager.sendCommand({ type: 'volume', volume: 42 });
+  const volCmd = sent.at(-1);
+  if (typeof volCmd !== 'object' || volCmd.type !== 'volume' || volCmd.volume !== 42) {
+    throw new Error(`Volume payload was lost: ${JSON.stringify(volCmd)}`);
+  }
+  console.log('[PASS] Volume level reaches the OS media layer intact');
+
+  manager.sendCommand('next');
+  if (sent.at(-1) !== 'next') {
+    throw new Error(`Plain commands should pass through unchanged: ${JSON.stringify(sent.at(-1))}`);
+  }
+  console.log('[PASS] Plain transport commands pass through unchanged');
+
   // Teardown
   manager.setDemoMode(false);
   manager.stop();
