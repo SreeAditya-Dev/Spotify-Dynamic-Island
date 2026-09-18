@@ -101,6 +101,38 @@ function stopHoverTracking() {
   }
 }
 
+/**
+ * Windows lets any app claim the topmost band, so a video player or game that
+ * goes fullscreen *after* us pushes the island underneath and it never comes
+ * back. Re-assert our place periodically and whenever focus moves elsewhere.
+ */
+const KEEP_ON_TOP_MS = 1200;
+let keepOnTopTimer: NodeJS.Timeout | null = null;
+
+function assertOnTop() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    // 'screen-saver' is the highest level Electron exposes; re-applying it
+    // re-issues the native topmost flag that another app may have taken.
+    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // Raises the window without activating it, so focus is never stolen.
+    mainWindow.moveTop();
+  } catch {}
+}
+
+function startKeepOnTop() {
+  if (keepOnTopTimer) clearInterval(keepOnTopTimer);
+  keepOnTopTimer = setInterval(assertOnTop, KEEP_ON_TOP_MS);
+}
+
+function stopKeepOnTop() {
+  if (keepOnTopTimer) {
+    clearInterval(keepOnTopTimer);
+    keepOnTopTimer = null;
+  }
+}
+
 function centerStage() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const { width: screenWidth } = screen.getPrimaryDisplay().bounds;
@@ -167,10 +199,17 @@ function createWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     startHoverTracking();
+    startKeepOnTop();
   });
+
+  // Another window taking focus is the usual moment we get demoted.
+  mainWindow.on('blur', () => assertOnTop());
+  mainWindow.on('show', () => assertOnTop());
+  mainWindow.on('restore', () => assertOnTop());
 
   mainWindow.on('closed', () => {
     stopHoverTracking();
+    stopKeepOnTop();
     mainWindow = null;
   });
 }
@@ -306,6 +345,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     stopHoverTracking();
+    stopKeepOnTop();
     mediaManager?.stop();
     app.quit();
   }
@@ -314,5 +354,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true;
   stopHoverTracking();
+  stopKeepOnTop();
   mediaManager?.stop();
 });

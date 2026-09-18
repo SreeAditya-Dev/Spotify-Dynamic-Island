@@ -12,6 +12,9 @@ async function testMediaManager() {
   if (initial.isPlaying !== false) {
     throw new Error('Expected initial state isPlaying to be false');
   }
+  if (initial.title !== '' || initial.artist !== '') {
+    throw new Error(`Expected empty initial track, got "${initial.title}" / "${initial.artist}"`);
+  }
   console.log('[PASS] Initial idle state verified');
 
   // Test Demo mode activation
@@ -19,6 +22,74 @@ async function testMediaManager() {
   manager.on('state-changed', (state) => {
     receivedState = state;
   });
+
+  // --- Idle handling: nothing playing, no Spotify, no browser ---
+  // The renderer keys its "No Music Playing" card off an empty title, so the
+  // manager must collapse to a genuinely empty state rather than hold on to a
+  // stale track once every source goes quiet.
+  const idlePayload: MediaState = {
+    id: 'idle',
+    title: '',
+    artist: '',
+    album: '',
+    artworkUrl: '',
+    isPlaying: false,
+    position: 0,
+    duration: 0,
+    source: 'system',
+    timestamp: Date.now()
+  };
+
+  // A source that reports a real track, then goes away entirely.
+  (manager as any).lastOsState = {
+    ...idlePayload,
+    id: 'x',
+    title: 'Some Track',
+    artist: 'Some Artist',
+    isPlaying: true
+  };
+  (manager as any).evaluateState();
+  if (!receivedState || (receivedState as MediaState).title !== 'Some Track') {
+    throw new Error('Expected the playing OS track to be shown');
+  }
+
+  (manager as any).lastOsState = idlePayload;
+  (manager as any).evaluateState();
+  if (!receivedState || (receivedState as MediaState).title !== '') {
+    throw new Error(
+      `Stale track survived after the source went idle: "${(receivedState as MediaState).title}"`
+    );
+  }
+  if ((receivedState as MediaState).isPlaying !== false) {
+    throw new Error('Idle state must not report isPlaying');
+  }
+  console.log('[PASS] Falls back to idle when every media source goes quiet');
+
+  // Nothing at all connected (no Spotify, no browser, no OS session).
+  (manager as any).lastOsState = null;
+  (manager as any).lastBrowserState = null;
+  (manager as any).evaluateState();
+  if (!receivedState || (receivedState as MediaState).title !== '') {
+    throw new Error('Expected idle state when no source is connected');
+  }
+  console.log('[PASS] Idle state verified with no sources connected');
+
+  // A paused track is still worth showing - idle means "no track at all".
+  (manager as any).lastOsState = {
+    ...idlePayload,
+    id: 'p',
+    title: 'Paused Track',
+    artist: 'Paused Artist',
+    isPlaying: false
+  };
+  (manager as any).evaluateState();
+  if (!receivedState || (receivedState as MediaState).title !== 'Paused Track') {
+    throw new Error('A paused track should still be displayed, not treated as idle');
+  }
+  console.log('[PASS] Paused track is shown rather than treated as idle');
+
+  (manager as any).lastOsState = null;
+  (manager as any).evaluateState();
 
   console.log('Activating Demo Mode...');
   manager.setDemoMode(true, {

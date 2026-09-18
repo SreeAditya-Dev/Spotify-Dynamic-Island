@@ -46,21 +46,11 @@ export const CompactCapsule: React.FC<CompactCapsuleProps> = ({ media, hasTrack 
         </div>
       </div>
 
-      {/* Center: Track Title & Artist */}
-      <div className="flex-1 min-w-0 flex flex-col justify-center overflow-hidden">
-        <div className="flex items-center gap-1.5 overflow-hidden">
-          <span className="text-[12px] font-semibold text-white truncate tracking-tight">
-            {media.title || 'Playing Music'}
-          </span>
-          {media.artist && (
-            <>
-              <span className="text-neutral-500 text-[10px]">•</span>
-              <span className="text-[11px] text-neutral-400 truncate">
-                {media.artist}
-              </span>
-            </>
-          )}
-        </div>
+      {/* Center: Track title only - the artist belongs to the expanded card */}
+      <div className="flex-1 min-w-0 flex items-center overflow-hidden">
+        <span className="w-full text-[12px] font-semibold text-white truncate tracking-tight">
+          {media.title || 'Playing Music'}
+        </span>
       </div>
 
       {/* Right: Audio Visualizer */}
