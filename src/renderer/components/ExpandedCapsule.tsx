@@ -10,7 +10,6 @@ import {
   Volume2, 
   VolumeX, 
   Pin, 
-  Sparkles, 
   Music,
   ExternalLink
 } from 'lucide-react';
@@ -20,17 +19,13 @@ interface ExpandedCapsuleProps {
   onCommand: (cmd: MediaCommand) => void;
   isPinned: boolean;
   onTogglePin: () => void;
-  onToggleDemo: () => void;
-  isDemoActive: boolean;
 }
 
 export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
   media,
   onCommand,
   isPinned,
-  onTogglePin,
-  onToggleDemo,
-  isDemoActive
+  onTogglePin
 }) => {
   // Smooth local timeline estimation
   const [localPos, setLocalPos] = useState(media.position);
@@ -131,21 +126,14 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
           </div>
         </div>
 
-        {/* Bottom Actions: Launch Spotify Web or Test Demo */}
-        <div className="flex items-center gap-2 pt-1">
+        {/* Bottom action: launch Spotify Web */}
+        <div className="flex items-center pt-1">
           <button
             onClick={() => window.dynamicIsland?.openSpotifyWeb()}
             className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-spotify-green hover:bg-spotify-light text-black text-[11.5px] font-semibold rounded-xl transition-all interactive-btn shadow-sm"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             Open Spotify Web
-          </button>
-          <button
-            onClick={onToggleDemo}
-            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white/10 hover:bg-white/15 text-white text-[11.5px] font-medium rounded-xl transition-all interactive-btn border border-white/10"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-spotify-green" />
-            Try Demo Track
           </button>
         </div>
       </div>
@@ -164,17 +152,6 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Demo track switcher */}
-          <button
-            onClick={onToggleDemo}
-            title={isDemoActive ? "Switch demo song" : "Test with demo track"}
-            className={`p-1.5 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 interactive-btn ${
-              isDemoActive ? 'text-spotify-green bg-spotify-green/10' : ''
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-          </button>
-
           {/* Pin open toggle */}
           <button
             onClick={onTogglePin}

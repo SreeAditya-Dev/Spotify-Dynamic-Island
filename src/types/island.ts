@@ -25,9 +25,17 @@ export const CAPSULE_TOP = 6;
  */
 export const CAPSULE = {
   idle: { width: 168, height: 34, radius: 17 },
-  compact: { width: 268, height: 40, radius: 20 },
+  compact: { width: 220, height: 40, radius: 20 },
   expanded: { width: 460, height: 210, radius: 30 }
 } as const;
+
+/**
+ * The compact pill hugs its content instead of sitting at a fixed width, so a
+ * short title does not leave a dead gap before the visualizer. Measured at
+ * runtime and clamped to this range.
+ */
+export const COMPACT_MIN_WIDTH = 132;
+export const COMPACT_MAX_WIDTH = 300;
 
 export type CapsuleMode = keyof typeof CAPSULE;
 
@@ -43,8 +51,9 @@ export interface HotRect {
 }
 
 /** Where the capsule sits inside the stage for a given mode. */
-export function capsuleRect(mode: CapsuleMode): HotRect {
-  const { width, height } = CAPSULE[mode];
+export function capsuleRect(mode: CapsuleMode, widthOverride?: number): HotRect {
+  const { height } = CAPSULE[mode];
+  const width = widthOverride ?? CAPSULE[mode].width;
   return {
     x: Math.round((STAGE_WIDTH - width) / 2),
     y: CAPSULE_TOP,

@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MediaState, MediaCommand } from '../types/media';
-import { CAPSULE, CAPSULE_TOP, CapsuleMode, HotRect, capsuleRect } from '../types/island';
+import {
+  CAPSULE,
+  CAPSULE_TOP,
+  COMPACT_MAX_WIDTH,
+  COMPACT_MIN_WIDTH,
+  CapsuleMode,
+  HotRect,
+  capsuleRect
+} from '../types/island';
 import { CompactCapsule } from './components/CompactCapsule';
 import { ExpandedCapsule } from './components/ExpandedCapsule';
 
@@ -11,13 +19,11 @@ declare global {
       onMediaState: (callback: (state: MediaState) => void) => () => void;
       onHoverChange: (callback: (hovering: boolean) => void) => () => void;
       onTogglePinned: (callback: (pinned: boolean) => void) => () => void;
-      onToggleDemo: (callback: () => void) => () => void;
       sendCommand: (cmd: MediaCommand) => Promise<boolean>;
       getInitialState: () => Promise<MediaState>;
       setHotRect: (rect: HotRect) => void;
       setPointerLock: (locked: boolean) => void;
       setPinned: (pinned: boolean) => void;
-      setDemoMode: (enabled: boolean) => void;
       openSpotifyWeb: () => void;
       minimizeApp: () => void;
       closeApp: () => void;
@@ -30,36 +36,8 @@ const COLLAPSE_DELAY_MS = 180;
 /** Matches the capsule morph duration in globals.css. */
 const MORPH_DURATION_MS = 520;
 
-const DEMO_PLAYLIST: Partial<MediaState>[] = [
-  {
-    title: 'Starboy',
-    artist: 'The Weeknd, Daft Punk',
-    album: 'Starboy',
-    duration: 230,
-    artworkUrl: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    title: 'Blinding Lights',
-    artist: 'The Weeknd',
-    album: 'After Hours',
-    duration: 200,
-    artworkUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    title: 'Levitating',
-    artist: 'Dua Lipa',
-    album: 'Future Nostalgia',
-    duration: 203,
-    artworkUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    title: 'Get Lucky',
-    artist: 'Daft Punk, Pharrell Williams',
-    album: 'Random Access Memories',
-    duration: 248,
-    artworkUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=600&auto=format&fit=crop&q=80'
-  }
-];
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 export const App: React.FC = () => {
   const [media, setMedia] = useState<MediaState>({
@@ -77,8 +55,6 @@ export const App: React.FC = () => {
 
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
-  const [isDemoActive, setIsDemoActive] = useState(false);
-  const [demoIndex, setDemoIndex] = useState(0);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,71 +100,52 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const toggleDemo = useCallback(() => {
-    setIsDemoActive((active) => {
-      if (!active) {
-        const track = DEMO_PLAYLIST[0];
-        window.dynamicIsland?.setDemoMode(true);
-        setDemoIndex(0);
-        setMedia((prev) => ({
-          ...prev,
-          id: 'demo-track',
-          title: track.title!,
-          artist: track.artist!,
-          album: track.album!,
-          artworkUrl: track.artworkUrl!,
-          isPlaying: true,
-          position: 42,
-          duration: track.duration!,
-          source: 'demo',
-          sourceApp: 'Spotify Demo',
-          timestamp: Date.now()
-        }));
-        return true;
-      }
-
-      const nextIdx = (demoIndex + 1) % DEMO_PLAYLIST.length;
-      if (nextIdx === 0) {
-        window.dynamicIsland?.setDemoMode(false);
-        return false;
-      }
-
-      setDemoIndex(nextIdx);
-      const track = DEMO_PLAYLIST[nextIdx];
-      setMedia((prev) => ({
-        ...prev,
-        title: track.title!,
-        artist: track.artist!,
-        album: track.album!,
-        artworkUrl: track.artworkUrl!,
-        position: 0,
-        duration: track.duration!,
-        timestamp: Date.now()
-      }));
-      return true;
-    });
-  }, [demoIndex]);
-
-  // Tray menu actions
+  // Tray menu pin toggle
   useEffect(() => {
     if (!window.dynamicIsland) return;
-    const offPin = window.dynamicIsland.onTogglePinned(setIsPinned);
-    const offDemo = window.dynamicIsland.onToggleDemo(() => toggleDemo());
-    return () => {
-      offPin();
-      offDemo();
-    };
-  }, [toggleDemo]);
+    return window.dynamicIsland.onTogglePinned(setIsPinned);
+  }, []);
 
   const hasTrack = Boolean(media.title || media.artist);
   const isExpanded = isHovered || isPinned;
   const mode: CapsuleMode = isExpanded ? 'expanded' : hasTrack ? 'compact' : 'idle';
-  const size = CAPSULE[mode];
+
+  // The collapsed pill hugs its content. An offscreen copy is measured at its
+  // natural width, then clamped - measuring the visible layer directly would
+  // feed its own (already constrained) width back into itself.
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [compactWidth, setCompactWidth] = useState<number>(CAPSULE.compact.width);
+
+  useEffect(() => {
+    const node = measureRef.current;
+    if (!node) return;
+
+    const update = () => {
+      const natural = node.getBoundingClientRect().width;
+      if (natural > 0) {
+        setCompactWidth(Math.round(clamp(natural, COMPACT_MIN_WIDTH, COMPACT_MAX_WIDTH)));
+      }
+    };
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [media.title, media.artworkUrl, media.isPlaying, hasTrack]);
+
+  const collapsedWidth = hasTrack ? compactWidth : CAPSULE.idle.width;
+  const size = {
+    width: isExpanded ? CAPSULE.expanded.width : collapsedWidth,
+    height: CAPSULE[mode].height,
+    radius: CAPSULE[mode].radius
+  };
 
   // Tell the main process where the capsule is, so cursor hit-testing tracks it.
   useEffect(() => {
-    window.dynamicIsland?.setHotRect(capsuleRect(mode));
-  }, [mode]);
+    window.dynamicIsland?.setHotRect(
+      capsuleRect(mode, mode === 'expanded' ? undefined : collapsedWidth)
+    );
+  }, [mode, collapsedWidth]);
 
   // Keep the expanded layer mounted through the collapse animation so it can
   // fade out instead of vanishing mid-morph.
@@ -230,6 +187,13 @@ export const App: React.FC = () => {
 
   return (
     <main className="island-stage">
+      {/* Offscreen measurement copy - never visible, never interactive */}
+      <div className="island-measure" aria-hidden="true">
+        <div ref={measureRef} style={{ height: `${CAPSULE.compact.height}px` }}>
+          <CompactCapsule media={media} hasTrack={hasTrack} />
+        </div>
+      </div>
+
       {/* Ambient reactive backdrop glow */}
       {hasTrack && (
         <div
@@ -262,7 +226,7 @@ export const App: React.FC = () => {
           className="island-layer"
           data-visible={!isExpanded}
           style={{
-            width: `${CAPSULE[hasTrack ? 'compact' : 'idle'].width}px`,
+            width: `${collapsedWidth}px`,
             height: `${CAPSULE[hasTrack ? 'compact' : 'idle'].height}px`
           }}
         >
@@ -284,8 +248,6 @@ export const App: React.FC = () => {
               onCommand={handleCommand}
               isPinned={isPinned}
               onTogglePin={togglePin}
-              onToggleDemo={toggleDemo}
-              isDemoActive={isDemoActive}
             />
           </div>
         )}

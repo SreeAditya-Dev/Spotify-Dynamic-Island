@@ -19,8 +19,6 @@ contextBridge.exposeInMainWorld('dynamicIsland', {
   onTogglePinned: (callback: (pinned: boolean) => void) =>
     on<[boolean]>('toggle-pinned', callback),
 
-  onToggleDemo: (callback: () => void) => on<[]>('toggle-demo', callback),
-
   sendCommand: (cmd: MediaCommand) => ipcRenderer.invoke('send-command', cmd),
   getInitialState: (): Promise<MediaState> => ipcRenderer.invoke('get-initial-state'),
 
@@ -31,7 +29,6 @@ contextBridge.exposeInMainWorld('dynamicIsland', {
   setPointerLock: (locked: boolean) => ipcRenderer.send('island-pointer-lock', locked),
 
   setPinned: (pinned: boolean) => ipcRenderer.send('set-pinned', pinned),
-  setDemoMode: (enabled: boolean) => ipcRenderer.send('set-demo-mode', enabled),
   openSpotifyWeb: () => ipcRenderer.send('open-spotify-web'),
   minimizeApp: () => ipcRenderer.send('minimize-app'),
   closeApp: () => ipcRenderer.send('close-app')

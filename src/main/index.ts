@@ -239,12 +239,6 @@ function createTray() {
           updateContextMenu();
         }
       },
-      {
-        label: 'Toggle Demo Track',
-        click: () => {
-          mainWindow?.webContents.send('toggle-demo');
-        }
-      },
       { type: 'separator' },
       {
         label: 'Open Spotify Web',
@@ -317,10 +311,6 @@ app.whenReady().then(() => {
 
   ipcMain.on('set-pinned', (_, pinned: boolean) => {
     isPinned = pinned;
-  });
-
-  ipcMain.on('set-demo-mode', (_, enabled: boolean) => {
-    mediaManager?.setDemoMode(enabled);
   });
 
   ipcMain.on('open-spotify-web', () => {
