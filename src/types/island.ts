@@ -24,10 +24,10 @@ export const CAPSULE_TOP = 6;
  * its pill shape and then snap square. Real values tween cleanly.
  */
 export const CAPSULE = {
-  idle: { width: 168, height: 34, radius: 17 },
+  idle: { width: 120, height: 34, radius: 17 },
   // Fixed width: the pill stays the same size whatever the track is called,
   // and long titles truncate rather than resizing the capsule.
-  compact: { width: 220, height: 40, radius: 20 },
+  compact: { width: 200, height: 34, radius: 17 },
   expanded: { width: 460, height: 210, radius: 30 }
 } as const;
 
