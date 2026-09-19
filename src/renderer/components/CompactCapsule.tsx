@@ -35,11 +35,12 @@ export const CompactCapsule: React.FC<CompactCapsuleProps> = ({ media, hasTrack 
           <img
             src={media.artworkUrl}
             alt="Art"
+            draggable={false}
             // No scale transform here: at a 24px diameter a 1.05x "breathing"
             // scale shifts edges by a fraction of a pixel, which forces the
             // browser into sub-pixel antialiasing and reads as a blurry image.
             // The expanded artwork has never had this transform and stays sharp.
-            className={`w-full h-full object-cover transition-opacity duration-500 ${
+            className={`w-full h-full object-cover transition-opacity duration-500 select-none ${
               media.isPlaying ? 'opacity-100' : 'opacity-80'
             }`}
           />
