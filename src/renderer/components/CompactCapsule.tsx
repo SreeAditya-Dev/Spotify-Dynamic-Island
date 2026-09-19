@@ -1,7 +1,7 @@
 import React from 'react';
 import { MediaState } from '../../types/media';
 import { AudioVisualizer } from './AudioVisualizer';
-import { Music } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 
 interface CompactCapsuleProps {
   media: MediaState;
@@ -16,13 +16,13 @@ export const CompactCapsule: React.FC<CompactCapsuleProps> = ({ media, hasTrack 
   if (!hasTrack) {
     return (
       <div className="flex items-center justify-center w-full h-full px-3 gap-2 text-neutral-400">
-        <div className="w-5 h-5 rounded-full bg-spotify-dark flex items-center justify-center border border-white/10 flex-shrink-0">
-          <Music className="w-3 h-3 text-spotify-green" />
+        <div className="w-5 h-5 rounded-full overflow-hidden border border-white/10 flex-shrink-0 shadow-sm bg-neutral-900">
+          <img src={logoImg} alt="Nilo" draggable={false} className="w-full h-full object-cover select-none" />
         </div>
-        <span className="text-[11.5px] font-medium tracking-tight text-neutral-300 whitespace-nowrap">
-          Spotify
+        <span className="text-[12px] font-semibold tracking-tight text-white whitespace-nowrap">
+          Nilo
         </span>
-        <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 animate-pulse flex-shrink-0 ml-0.5" />
+        <span className="w-1.5 h-1.5 rounded-full bg-spotify-green animate-pulse flex-shrink-0 ml-0.5" />
       </div>
     );
   }
@@ -46,7 +46,7 @@ export const CompactCapsule: React.FC<CompactCapsuleProps> = ({ media, hasTrack 
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-neutral-800">
-            <Music className="w-3 h-3 text-spotify-green" />
+            <img src={logoImg} alt="Nilo" draggable={false} className="w-3.5 h-3.5 object-cover select-none rounded-full" />
           </div>
         )}
       </div>

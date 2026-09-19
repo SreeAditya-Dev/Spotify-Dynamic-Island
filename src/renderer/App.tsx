@@ -162,7 +162,7 @@ export const App: React.FC = () => {
 
       {/* Main Dynamic Island Capsule - only this morphs, the window never does */}
       <section
-        aria-label="Spotify Dynamic Island"
+        aria-label="Nilo"
         data-mode={mode}
         onPointerDown={() => window.dynamicIsland?.setPointerLock(true)}
         style={{

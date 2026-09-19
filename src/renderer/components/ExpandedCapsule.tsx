@@ -13,6 +13,7 @@ import {
   Music,
   ExternalLink
 } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 
 interface ExpandedCapsuleProps {
   media: MediaState;
@@ -174,7 +175,7 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
         <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
           <span className={`w-2 h-2 rounded-full ${media.isPlaying ? 'bg-spotify-green animate-pulse' : 'bg-neutral-500'}`} />
           <span className="text-[10.5px] font-medium text-neutral-300 tracking-tight">
-            {media.sourceApp || 'Spotify Dynamic Island'}
+            {media.sourceApp || 'Nilo'}
           </span>
         </div>
 
@@ -208,11 +209,17 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
               <img
                 src={media.artworkUrl}
                 alt="Cover"
-                className="w-full h-full object-cover"
+                draggable={false}
+                className="w-full h-full object-cover select-none"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-neutral-800">
-                <Music className="w-6 h-6 text-spotify-green" />
+                <img
+                  src={logoImg}
+                  alt="Nilo"
+                  draggable={false}
+                  className="w-8 h-8 object-cover rounded-lg select-none"
+                />
               </div>
             )}
           </div>

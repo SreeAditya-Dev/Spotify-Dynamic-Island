@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, NativeImage, shell } from 'electron';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MediaManager } from './services/mediaManager';
@@ -144,10 +145,30 @@ function centerStage() {
   });
 }
 
+function getAppIcon(): NativeImage | null {
+  const possiblePaths = [
+    path.join(__dirname, '../../dist/logo.png'),
+    path.join(__dirname, '../../public/logo.png'),
+    path.join(process.cwd(), 'public/logo.png'),
+    path.join(process.cwd(), 'spotify_dynamic_island.png')
+  ];
+  const iconPath = possiblePaths.find((p) => fs.existsSync(p));
+  if (iconPath) {
+    try {
+      const img = nativeImage.createFromPath(iconPath);
+      if (!img.isEmpty()) return img;
+    } catch {}
+  }
+  return null;
+}
+
 function createWindow() {
   const { width: screenWidth } = screen.getPrimaryDisplay().bounds;
+  const appIcon = getAppIcon();
 
   mainWindow = new BrowserWindow({
+    title: 'Nilo',
+    icon: appIcon || undefined,
     width: STAGE_WIDTH,
     height: STAGE_HEIGHT,
     x: Math.round((screenWidth - STAGE_WIDTH) / 2),
@@ -215,17 +236,23 @@ function createWindow() {
 }
 
 function createTray() {
-  const svgIcon = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1DB954" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10"></circle>
-      <path d="M8 11.5c2.5-1 5.5-1 8 0"></path>
-      <path d="M7 14.5c3-1 7-1 10 0"></path>
-      <path d="M9 8.5c2-.5 4-.5 6 0"></path>
-    </svg>
-  `;
-  const icon = nativeImage.createFromBuffer(Buffer.from(svgIcon));
+  const appIcon = getAppIcon();
+  let icon: NativeImage;
+  if (appIcon && !appIcon.isEmpty()) {
+    icon = appIcon.resize({ width: 16, height: 16 });
+  } else {
+    const svgIcon = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1DB954" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="M8 11.5c2.5-1 5.5-1 8 0"></path>
+        <path d="M7 14.5c3-1 7-1 10 0"></path>
+        <path d="M9 8.5c2-.5 4-.5 6 0"></path>
+      </svg>
+    `;
+    icon = nativeImage.createFromBuffer(Buffer.from(svgIcon));
+  }
   tray = new Tray(icon);
-  tray.setToolTip('Spotify Dynamic Island');
+  tray.setToolTip('Nilo');
 
   const updateContextMenu = () => {
     const contextMenu = Menu.buildFromTemplate([
@@ -251,7 +278,7 @@ function createTray() {
         click: () => centerStage()
       },
       {
-        label: 'Quit Dynamic Island',
+        label: 'Quit Nilo',
         click: () => {
           isQuitting = true;
           app.quit();
@@ -265,6 +292,7 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
+  app.setName('Nilo');
   createWindow();
   createTray();
 
