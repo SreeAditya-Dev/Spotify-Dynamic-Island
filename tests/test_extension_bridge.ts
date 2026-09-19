@@ -7,7 +7,9 @@ async function testWebSocketBridge() {
   const bridge = new WebSocketBridgeService();
   bridge.start();
 
-  const ws = new WebSocket('ws://localhost:9876');
+  const ws = new WebSocket('ws://localhost:9876', {
+    headers: { origin: 'https://open.spotify.com' }
+  });
 
   await new Promise<void>((resolve, reject) => {
     ws.on('open', () => {
