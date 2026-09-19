@@ -277,7 +277,7 @@ export const ExpandedCapsule: React.FC<ExpandedCapsuleProps> = ({
         {/* Time Counters */}
         <div className="flex items-center justify-between text-[10.5px] text-neutral-400 font-mono tracking-wider pt-0.5">
           <span>{formatTime(currentDisplayPos)}</span>
-          <span>{media.duration > 0 ? `-${formatTime(Math.max(0, media.duration - currentDisplayPos))}` : '0:00'}</span>
+          <span>{media.duration > 0 ? formatTime(media.duration) : '0:00'}</span>
         </div>
       </div>
 
