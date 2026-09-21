@@ -65,7 +65,10 @@
       }
     ],
     "category": "AudioVideo",
-    "icon": "public/logo.png"
+    "icon": "public/logo.png",
+    "maintainer": "V Sree Aditya <leoharrychan.01@gmail.com>",
+    "desktopName": "nilo",
+    "syncDesktopName": true
   },
   "nsis": {
     "oneClick": false,

@@ -23,7 +23,7 @@
     "mpris",
     "desktop-widget"
   ],
-  "author": "",
+  "author": "V Sree Aditya <leoharrychan.01@gmail.com>",
   "license": "MIT",
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
