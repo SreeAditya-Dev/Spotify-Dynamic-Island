@@ -69,6 +69,18 @@ body {
   will-change: width, height, border-radius;
 }
 
+.island-capsule[data-position='left'] {
+  transform-origin: top left;
+}
+
+.island-capsule[data-position='right'] {
+  transform-origin: top right;
+}
+
+.island-capsule[data-position='center'] {
+  transform-origin: top center;
+}
+
 /* Glassmorphic border and specular reflection */
 .island-surface {
   background-color: #000000;
@@ -84,6 +96,22 @@ body {
     0 26px 60px -14px rgba(0, 0, 0, 0.85),
     0 0 1px 1px rgba(255, 255, 255, 0.1),
     inset 0 1px 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* Companion Settings Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
 }
 
 /*

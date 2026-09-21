@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "settings": "electron . --settings",
     "build": "tsc && vite build && powershell.exe -Command \"Copy-Item src/main/services/windows-smtc-daemon.ps1 dist-electron/main/ -Force -ErrorAction SilentlyContinue\"",
     "start": "electron .",
     "test": "tsx tests/run_all_tests.ts"

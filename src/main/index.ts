@@ -3,12 +3,15 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MediaManager } from './services/mediaManager';
+import { SettingsManager } from './services/settingsManager';
 import { MediaCommand } from '../types/media';
+import { IslandSettings } from '../types/settings';
 import {
   STAGE_WIDTH,
   STAGE_HEIGHT,
   STAGE_TOP,
   HOVER_PADDING,
+  STAGE_INNER_PADDING,
   HotRect,
   capsuleRect
 } from '../types/island';
@@ -22,17 +25,27 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
-// An always-on-top overlay gets marked "occluded" whenever a fullscreen app
-// (game, video) is in front of it. Chromium then stops painting, so the island
-// would freeze mid-morph and come back showing a stale frame.
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
+const settingsManager = new SettingsManager(undefined, app);
+
 let mainWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
 let mediaManager: MediaManager | null = null;
 let tray: Tray | null = null;
 let isPinned = false;
 let isQuitting = false;
+
+// Single-instance handling: opening companion app or running second instance focuses Settings
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    createSettingsWindow();
+  });
+}
 
 /**
  * Hover tracking.
@@ -44,10 +57,11 @@ let isQuitting = false;
  * while the cursor is actually over the capsule.
  */
 const HOVER_POLL_MS = 24;
-let hotRect: HotRect = capsuleRect('compact');
+let hotRect: HotRect = capsuleRect('compact', settingsManager.getSettings().position);
 let isHovering = false;
 let hoverTimer: NodeJS.Timeout | null = null;
 let isInteractive = false;
+
 /**
  * Held while a pointer button is down inside the capsule. Dragging the seek or
  * volume slider can stray past the capsule edge, and making the window
@@ -86,11 +100,17 @@ function startHoverTracking() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (pointerLocked) return;
 
-    const nextHovering = pointerIsOverCapsule();
+    const overCapsule = pointerIsOverCapsule();
+    const settings = settingsManager.getSettings();
+
+    // The stage becomes interactive whenever cursor is over capsule so clicks register
+    setInteractive(overCapsule);
+
+    // Only fire hover expansion if hoverEnabled is turned on!
+    const nextHovering = overCapsule && settings.hoverEnabled;
     if (nextHovering === isHovering) return;
 
     isHovering = nextHovering;
-    setInteractive(nextHovering);
     mainWindow.webContents.send('island-hover', nextHovering);
   }, HOVER_POLL_MS);
 }
@@ -103,9 +123,7 @@ function stopHoverTracking() {
 }
 
 /**
- * Windows lets any app claim the topmost band, so a video player or game that
- * goes fullscreen *after* us pushes the island underneath and it never comes
- * back. Re-assert our place periodically and whenever focus moves elsewhere.
+ * Re-assert topmost band periodically and on focus blur.
  */
 const KEEP_ON_TOP_MS = 1200;
 let keepOnTopTimer: NodeJS.Timeout | null = null;
@@ -113,11 +131,8 @@ let keepOnTopTimer: NodeJS.Timeout | null = null;
 function assertOnTop() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   try {
-    // 'screen-saver' is the highest level Electron exposes; re-applying it
-    // re-issues the native topmost flag that another app may have taken.
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    // Raises the window without activating it, so focus is never stolen.
     mainWindow.moveTop();
   } catch {}
 }
@@ -134,15 +149,36 @@ function stopKeepOnTop() {
   }
 }
 
-function centerStage() {
+/** Calculates stage window bounds based on screen dimensions and chosen position */
+function getStageBounds(settings?: IslandSettings) {
+  const currentSettings = settings ?? settingsManager.getSettings();
+  const display = screen.getPrimaryDisplay();
+  const screenWidth = display.bounds.width;
+  const screenX = display.bounds.x;
+  const screenY = display.bounds.y;
+  const screenCenterX = screenX + Math.round(screenWidth / 2);
+  const centerOffset = currentSettings.centerOffset ?? 100;
+
+  let x: number;
+  if (currentSettings.position === 'left') {
+    // Next parallel side on the left of center (not extreme left)
+    x = (screenCenterX - centerOffset) - (STAGE_WIDTH - STAGE_INNER_PADDING);
+  } else if (currentSettings.position === 'right') {
+    // Next parallel side on the right of center (not extreme right)
+    x = (screenCenterX + centerOffset) - STAGE_INNER_PADDING;
+  } else {
+    // Top center
+    x = screenX + Math.round((screenWidth - STAGE_WIDTH) / 2);
+  }
+
+  const y = screenY + STAGE_TOP;
+  return { x, y, width: STAGE_WIDTH, height: STAGE_HEIGHT };
+}
+
+function updateStageBounds(settings?: IslandSettings) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const { width: screenWidth } = screen.getPrimaryDisplay().bounds;
-  mainWindow.setBounds({
-    x: Math.round((screenWidth - STAGE_WIDTH) / 2),
-    y: STAGE_TOP,
-    width: STAGE_WIDTH,
-    height: STAGE_HEIGHT
-  });
+  const bounds = getStageBounds(settings);
+  mainWindow.setBounds(bounds);
 }
 
 function getAppIcon(): NativeImage | null {
@@ -163,24 +199,24 @@ function getAppIcon(): NativeImage | null {
 }
 
 function createWindow() {
-  const { width: screenWidth } = screen.getPrimaryDisplay().bounds;
   const appIcon = getAppIcon();
+  const bounds = getStageBounds();
 
   mainWindow = new BrowserWindow({
     title: 'Nilo',
     icon: appIcon || undefined,
-    width: STAGE_WIDTH,
-    height: STAGE_HEIGHT,
-    x: Math.round((screenWidth - STAGE_WIDTH) / 2),
-    y: STAGE_TOP,
-    type: 'toolbar', // Prevents Windows "Show Desktop" (Win+D / 3-finger swipe) from minimizing it
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    type: 'toolbar', // Prevents Windows "Show Desktop" (Win+D) from minimizing it
     frame: false,
     transparent: true,
-    backgroundColor: '#00000000', // Required on Windows, else the stage paints an opaque box
+    backgroundColor: '#00000000',
     alwaysOnTop: true,
     resizable: false,
     movable: false,
-    skipTaskbar: true, // Prevents minimizing as a standard taskbar window
+    skipTaskbar: true,
     hasShadow: false,
     roundedCorners: false,
     webPreferences: {
@@ -192,20 +228,15 @@ function createWindow() {
     }
   });
 
-  // The stage is click-through until the cursor actually reaches the capsule.
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
-
-  // Stay on top across all virtual desktops / workspaces
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
 
-  // Prevent three-finger swipe down / Win+D ("Show Desktop") from minimizing the island
   mainWindow.on('minimize', () => {
     mainWindow?.restore();
     mainWindow?.show();
   });
 
-  // If window receives a hide signal during Show Desktop, keep it visible
   mainWindow.on('hide', () => {
     if (!isQuitting) {
       mainWindow?.show();
@@ -223,7 +254,6 @@ function createWindow() {
     startKeepOnTop();
   });
 
-  // Another window taking focus is the usual moment we get demoted.
   mainWindow.on('blur', () => assertOnTop());
   mainWindow.on('show', () => assertOnTop());
   mainWindow.on('restore', () => assertOnTop());
@@ -232,6 +262,53 @@ function createWindow() {
     stopHoverTracking();
     stopKeepOnTop();
     mainWindow = null;
+  });
+}
+
+/** Opens or focuses the separate Settings Companion App window */
+function createSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+
+  const appIcon = getAppIcon();
+
+  settingsWindow = new BrowserWindow({
+    title: 'Nilo Preferences',
+    icon: appIcon || undefined,
+    width: 860,
+    height: 660,
+    minWidth: 720,
+    minHeight: 540,
+    backgroundColor: '#0d0e12',
+    autoHideMenuBar: true,
+    show: false,
+    resizable: true,
+    skipTaskbar: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      backgroundThrottling: false,
+      devTools: process.env.NODE_ENV !== 'production'
+    }
+  });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    settingsWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#settings`);
+  } else {
+    settingsWindow.loadFile(path.join(__dirname, '../../dist/index.html'), { hash: 'settings' });
+  }
+
+  settingsWindow.once('ready-to-show', () => {
+    settingsWindow?.show();
+    settingsWindow?.focus();
+  });
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
   });
 }
 
@@ -252,10 +329,54 @@ function createTray() {
     icon = nativeImage.createFromBuffer(Buffer.from(svgIcon));
   }
   tray = new Tray(icon);
-  tray.setToolTip('Nilo');
+  tray.setToolTip('Nilo - Spotify Dynamic Island');
 
   const updateContextMenu = () => {
+    const currentSettings = settingsManager.getSettings();
+
     const contextMenu = Menu.buildFromTemplate([
+      {
+        label: '⚙️ Settings Companion...',
+        click: () => createSettingsWindow()
+      },
+      { type: 'separator' },
+      {
+        label: 'Position',
+        submenu: [
+          {
+            label: 'Left Parallel Side',
+            type: 'radio',
+            checked: currentSettings.position === 'left',
+            click: () => {
+              settingsManager.updateSettings({ position: 'left' });
+            }
+          },
+          {
+            label: 'Top Center (Default)',
+            type: 'radio',
+            checked: currentSettings.position === 'center',
+            click: () => {
+              settingsManager.updateSettings({ position: 'center' });
+            }
+          },
+          {
+            label: 'Right Parallel Side',
+            type: 'radio',
+            checked: currentSettings.position === 'right',
+            click: () => {
+              settingsManager.updateSettings({ position: 'right' });
+            }
+          }
+        ]
+      },
+      {
+        label: 'Expand on Hover',
+        type: 'checkbox',
+        checked: currentSettings.hoverEnabled,
+        click: (menuItem) => {
+          settingsManager.updateSettings({ hoverEnabled: menuItem.checked });
+        }
+      },
       {
         label: isPinned ? 'Unpin Island' : 'Pin Island Open',
         type: 'checkbox',
@@ -274,8 +395,10 @@ function createTray() {
         }
       },
       {
-        label: 'Reset Position',
-        click: () => centerStage()
+        label: 'Reset Position to Center',
+        click: () => {
+          settingsManager.updateSettings({ position: 'center' });
+        }
       },
       {
         label: 'Quit Nilo',
@@ -289,12 +412,26 @@ function createTray() {
   };
 
   updateContextMenu();
+
+  tray.on('double-click', () => {
+    createSettingsWindow();
+  });
+
+  // Re-build tray menu whenever settings change
+  settingsManager.on('settings-changed', () => {
+    updateContextMenu();
+  });
 }
 
 app.whenReady().then(() => {
   app.setName('Nilo');
   createWindow();
   createTray();
+
+  // If launched with --settings argument, open Settings app directly
+  if (process.argv.includes('--settings')) {
+    createSettingsWindow();
+  }
 
   // Initialize MediaManager
   mediaManager = new MediaManager();
@@ -304,23 +441,74 @@ app.whenReady().then(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('media-state', state);
     }
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send('media-state', state);
+    }
   });
 
-  // The renderer owns the capsule geometry and reports its target rectangle
-  // whenever the capsule changes shape, so hit-testing follows the animation.
+  // Settings listener: update stage position and broadcast to renderers
+  settingsManager.on('settings-changed', (updatedSettings) => {
+    updateStageBounds(updatedSettings);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('settings-changed', updatedSettings);
+      if (!updatedSettings.hoverEnabled && isHovering) {
+        isHovering = false;
+        mainWindow.webContents.send('island-hover', false);
+      }
+    }
+
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send('settings-changed', updatedSettings);
+    }
+  });
+
+  // IPC Settings Handlers
+  ipcMain.handle('get-settings', () => {
+    return settingsManager.getSettings();
+  });
+
+  ipcMain.handle('update-settings', (_, partial: Partial<IslandSettings>) => {
+    return settingsManager.updateSettings(partial);
+  });
+
+  ipcMain.handle('reset-settings', () => {
+    return settingsManager.resetSettings();
+  });
+
+  ipcMain.on('open-settings-window', () => {
+    createSettingsWindow();
+  });
+
+  ipcMain.on('close-settings-window', () => {
+    settingsWindow?.close();
+  });
+
+  ipcMain.on('minimize-settings-window', () => {
+    settingsWindow?.minimize();
+  });
+
+  ipcMain.handle('trigger-demo', () => {
+    if (!mediaManager) return false;
+    mediaManager.setDemoMode(true);
+    setTimeout(() => {
+      mediaManager?.setDemoMode(false);
+    }, 10000);
+    return true;
+  });
+
+  // Geometry and interaction hit-testing
   ipcMain.on('island-hot-rect', (_, rect: HotRect) => {
     if (!rect || typeof rect.width !== 'number' || typeof rect.height !== 'number') return;
     hotRect = rect;
   });
 
-  // Freeze hover tracking for the duration of a drag gesture.
   ipcMain.on('island-pointer-lock', (_, locked: boolean) => {
     pointerLocked = Boolean(locked);
     if (pointerLockTimer) {
       clearTimeout(pointerLockTimer);
       pointerLockTimer = null;
     }
-    // Safety net in case a pointerup never reaches the renderer.
     if (pointerLocked) {
       pointerLockTimer = setTimeout(() => {
         pointerLocked = false;
@@ -354,10 +542,10 @@ app.whenReady().then(() => {
     app.quit();
   });
 
-  // Keep the stage centred if the display layout changes
-  screen.on('display-metrics-changed', () => centerStage());
-  screen.on('display-added', () => centerStage());
-  screen.on('display-removed', () => centerStage());
+  // Keep the stage positioned properly if the display layout changes
+  screen.on('display-metrics-changed', () => updateStageBounds());
+  screen.on('display-added', () => updateStageBounds());
+  screen.on('display-removed', () => updateStageBounds());
 });
 
 app.on('window-all-closed', () => {

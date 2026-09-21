@@ -16,25 +16,32 @@ export async function resolveArtwork(title: string, artist: string, fallbackThum
   }
 
   try {
-    const query = encodeURIComponent(`${cleanTitle} ${artist}`);
-    const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`, {
+    let query = encodeURIComponent(`${cleanTitle} ${artist}`);
+    let res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`, {
       headers: { 'User-Agent': 'SpotifyDynamicIsland/1.0' },
       signal: AbortSignal.timeout(2500)
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.results && data.results.length > 0) {
-        const item = data.results[0];
-        // Upgrade thumbnail from 100x100 to 600x600 HD cover
-        const highRes = (item.artworkUrl100 || item.artworkUrl60 || '')
-          .replace('100x100bb.jpg', '600x600bb.jpg')
-          .replace('60x60bb.jpg', '600x600bb.jpg');
-        
-        if (highRes) {
-          cache.set(cacheKey, highRes);
-          return highRes;
-        }
+    let data = res.ok ? await res.json() : null;
+    if ((!data?.results || data.results.length === 0) && cleanTitle) {
+      query = encodeURIComponent(cleanTitle);
+      res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`, {
+        headers: { 'User-Agent': 'SpotifyDynamicIsland/1.0' },
+        signal: AbortSignal.timeout(2500)
+      });
+      data = res.ok ? await res.json() : null;
+    }
+
+    if (data?.results && data.results.length > 0) {
+      const item = data.results[0];
+      // Upgrade thumbnail from 100x100 to 600x600 HD cover
+      const highRes = (item.artworkUrl100 || item.artworkUrl60 || '')
+        .replace('100x100bb.jpg', '600x600bb.jpg')
+        .replace('60x60bb.jpg', '600x600bb.jpg');
+      
+      if (highRes) {
+        cache.set(cacheKey, highRes);
+        return highRes;
       }
     }
   } catch {

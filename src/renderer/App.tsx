@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MediaState, MediaCommand } from '../types/media';
-import { CAPSULE, CAPSULE_TOP, CapsuleMode, HotRect, capsuleRect } from '../types/island';
+import { CAPSULE, CapsuleMode, HotRect, capsuleRect, STAGE_INNER_PADDING } from '../types/island';
+import { IslandSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { CompactCapsule } from './components/CompactCapsule';
 import { ExpandedCapsule } from './components/ExpandedCapsule';
 
@@ -19,6 +20,9 @@ declare global {
       openSpotifyWeb: () => void;
       minimizeApp: () => void;
       closeApp: () => void;
+      getSettings?: () => Promise<IslandSettings>;
+      onSettingsChange?: (callback: (settings: IslandSettings) => void) => () => void;
+      openSettingsWindow?: () => void;
     };
   }
 }
@@ -42,8 +46,11 @@ export const App: React.FC = () => {
     timestamp: Date.now()
   });
 
+  const [settings, setSettings] = useState<IslandSettings>(DEFAULT_SETTINGS);
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
+  const [isManuallyExpanded, setIsManuallyExpanded] = useState(false);
+
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -56,6 +63,22 @@ export const App: React.FC = () => {
     });
 
     return window.dynamicIsland.onMediaState(setMedia);
+  }, []);
+
+  // Subscribe to settings updates from companion app / tray
+  useEffect(() => {
+    if (!window.dynamicIsland?.getSettings) return;
+
+    window.dynamicIsland.getSettings().then((s) => {
+      if (s) setSettings(s);
+    });
+
+    return window.dynamicIsland.onSettingsChange?.((newSettings) => {
+      setSettings(newSettings);
+      if (newSettings.hoverEnabled) {
+        setIsManuallyExpanded(false);
+      }
+    });
   }, []);
 
   // Hover state is owned by the main process: it hit-tests the OS cursor
@@ -96,18 +119,19 @@ export const App: React.FC = () => {
   }, []);
 
   const hasTrack = Boolean(media.title || media.artist);
-  const isExpanded = isHovered || isPinned;
+  const isExpanded = (isHovered && settings.hoverEnabled) || isPinned || isManuallyExpanded;
   const mode: CapsuleMode = isExpanded ? 'expanded' : hasTrack ? 'compact' : 'idle';
 
   const size = CAPSULE[mode];
 
-  // Tell the main process where the capsule is, so cursor hit-testing tracks it.
+  // Tell the main process where the capsule is based on current mode and placement position.
   useEffect(() => {
-    window.dynamicIsland?.setHotRect(capsuleRect(mode));
-  }, [mode]);
+    window.dynamicIsland?.setHotRect(
+      capsuleRect(mode, settings.position, settings.centerOffset, settings.topOffset)
+    );
+  }, [mode, settings.position, settings.centerOffset, settings.topOffset]);
 
-  // Keep the expanded layer mounted through the collapse animation so it can
-  // fade out instead of vanishing mid-morph.
+  // Keep the expanded layer mounted through the collapse animation so it can fade out.
   const [renderExpanded, setRenderExpanded] = useState(false);
   useEffect(() => {
     if (unmountTimerRef.current) {
@@ -130,8 +154,7 @@ export const App: React.FC = () => {
     if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
   }, []);
 
-  // A drag on the seek/volume slider can leave the capsule bounds; hold the
-  // island open and interactive until the button comes back up.
+  // Hold pointer lock during slider drags.
   useEffect(() => {
     const release = () => window.dynamicIsland?.setPointerLock(false);
     window.addEventListener('pointerup', release);
@@ -144,33 +167,53 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // Handle manual click to expand when hover feature is disabled
+  const handleCapsuleClick = (e: React.MouseEvent) => {
+    if (!settings.hoverEnabled && settings.clickToExpand && !isExpanded) {
+      setIsManuallyExpanded(true);
+    }
+  };
+
+  const capsuleStyle: React.CSSProperties = {
+    top: `${settings.topOffset}px`,
+    width: `${size.width}px`,
+    height: `${size.height}px`,
+    borderRadius: `${size.radius}px`,
+    ...(settings.position === 'left'
+      ? { right: `${STAGE_INNER_PADDING}px`, left: 'auto', transform: 'translateZ(0)' }
+      : settings.position === 'right'
+      ? { left: `${STAGE_INNER_PADDING}px`, right: 'auto', transform: 'translateZ(0)' }
+      : { left: '50%', right: 'auto', transform: 'translateX(-50%) translateZ(0)' })
+  };
+
+  const glowStyle: React.CSSProperties = {
+    width: `${size.width * 0.8}px`,
+    height: `${size.height * 0.8}px`,
+    top: `${settings.topOffset + 10}px`,
+    backgroundColor: media.isPlaying ? '#1DB954' : '#ffffff',
+    opacity: isExpanded ? 0.32 : 0.18,
+    ...(settings.position === 'left'
+      ? { right: `${STAGE_INNER_PADDING + size.width * 0.1}px`, left: 'auto', transform: 'none' }
+      : settings.position === 'right'
+      ? { left: `${STAGE_INNER_PADDING + size.width * 0.1}px`, right: 'auto', transform: 'none' }
+      : { left: '50%', right: 'auto', transform: 'translateX(-50%)' })
+  };
+
   return (
     <main className="island-stage">
       {/* Ambient reactive backdrop glow */}
-      {hasTrack && (
-        <div
-          className="ambient-glow"
-          style={{
-            width: `${size.width * 0.8}px`,
-            height: `${size.height * 0.8}px`,
-            top: `${CAPSULE_TOP + 10}px`,
-            backgroundColor: media.isPlaying ? '#1DB954' : '#ffffff',
-            opacity: isExpanded ? 0.32 : 0.18
-          }}
-        />
+      {hasTrack && settings.glowEnabled && (
+        <div className="ambient-glow" style={glowStyle} />
       )}
 
-      {/* Main Dynamic Island Capsule - only this morphs, the window never does */}
+      {/* Main Dynamic Island Capsule */}
       <section
         aria-label="Nilo"
         data-mode={mode}
+        data-position={settings.position}
+        onClick={handleCapsuleClick}
         onPointerDown={() => window.dynamicIsland?.setPointerLock(true)}
-        style={{
-          top: `${CAPSULE_TOP}px`,
-          width: `${size.width}px`,
-          height: `${size.height}px`,
-          borderRadius: `${size.radius}px`
-        }}
+        style={capsuleStyle}
         className="island-capsule island-surface"
       >
         {/* Compact layer: fixed size so it never reflows while the capsule morphs */}
@@ -198,8 +241,14 @@ export const App: React.FC = () => {
             <ExpandedCapsule
               media={media}
               onCommand={handleCommand}
-              isPinned={isPinned}
-              onTogglePin={togglePin}
+              isPinned={isPinned || isManuallyExpanded}
+              onTogglePin={() => {
+                if (isManuallyExpanded && !isPinned) {
+                  setIsManuallyExpanded(false);
+                } else {
+                  togglePin();
+                }
+              }}
             />
           </div>
         )}

@@ -13,6 +13,7 @@ const tests = [
   { name: 'Browser Extension WebSocket Bridge', file: 'tests/test_extension_bridge.ts' },
   { name: 'MediaManager State Machine & Command Router', file: 'tests/test_media_manager.ts' },
   { name: 'Windows GSMTC Persistent Daemon', file: 'tests/test_windows_smtc.ts' },
+  { name: 'Settings Manager & Screen Placement Geometry', file: 'tests/test_settings_and_positioning.ts' },
   { name: 'Production Bundle & Extension Integrity', file: 'tests/test_bundle_integrity.ts' }
 ];
 
