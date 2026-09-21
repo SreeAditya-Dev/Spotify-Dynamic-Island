@@ -1,6 +1,7 @@
 {
   "name": "spotify-dynamic-island",
   "productName": "Nilo",
+  "desktopName": "nilo",
   "version": "1.0.0",
   "description": "Ultra-smooth, low-memory Dynamic Island for Spotify on Windows, Mac, and Linux",
   "main": "dist-electron/main/index.js",
