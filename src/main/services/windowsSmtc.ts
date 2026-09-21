@@ -1,5 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import { MediaState, MediaCommand } from '../../types/media';
@@ -54,19 +56,64 @@ export class WindowsSmtcService extends EventEmitter {
   }
 
   private getScriptPath(): string {
-    // Check both src location and dist-electron location
-    const candidates = [
-      path.join(__dirname, 'windows-smtc-daemon.ps1'),
+    const isAsar = __dirname.includes('app.asar');
+
+    // 1. Direct on-disk candidates outside of app.asar
+    const directCandidates = [
+      // If packaged with asarUnpack, it lives in app.asar.unpacked
+      path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'windows-smtc-daemon.ps1'),
+      // If copied via extraResources
+      (process as any).resourcesPath ? path.join((process as any).resourcesPath, 'windows-smtc-daemon.ps1') : '',
+      (process as any).resourcesPath ? path.join((process as any).resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'windows-smtc-daemon.ps1') : '',
+      // Development mode paths
+      !isAsar ? path.join(__dirname, 'windows-smtc-daemon.ps1') : '',
       path.join(process.cwd(), 'src', 'main', 'services', 'windows-smtc-daemon.ps1'),
+      path.join(process.cwd(), 'dist-electron', 'main', 'windows-smtc-daemon.ps1'),
+    ].filter(Boolean);
+
+    for (const p of directCandidates) {
+      try {
+        if (!p.includes('app.asar') && fs.existsSync(p)) {
+          return p;
+        }
+      } catch {}
+    }
+
+    // 2. If it only exists inside an .asar archive, extract it to disk so powershell.exe can execute it
+    const asarCandidates = [
+      path.join(__dirname, 'windows-smtc-daemon.ps1'),
       path.join(__dirname, '..', '..', 'src', 'main', 'services', 'windows-smtc-daemon.ps1'),
     ];
 
-    for (const p of candidates) {
+    for (const p of asarCandidates) {
       try {
-        if (require('fs').existsSync(p)) return p;
-      } catch {}
+        if (fs.existsSync(p)) {
+          let targetDir = '';
+          try {
+            const electron = require('electron');
+            if (electron.app && typeof electron.app.getPath === 'function') {
+              targetDir = electron.app.getPath('userData');
+            }
+          } catch {}
+          if (!targetDir) {
+            targetDir = path.join(os.tmpdir(), 'nilo');
+          }
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          const targetFile = path.join(targetDir, 'windows-smtc-daemon.ps1');
+          const scriptContent = fs.readFileSync(p, 'utf8');
+          if (!fs.existsSync(targetFile) || fs.readFileSync(targetFile, 'utf8') !== scriptContent) {
+            fs.writeFileSync(targetFile, scriptContent, 'utf8');
+          }
+          return targetFile;
+        }
+      } catch (err) {
+        console.error('[WindowsSmtc] Failed extracting script from asar:', err);
+      }
     }
-    return candidates[1];
+
+    return path.join(process.cwd(), 'src', 'main', 'services', 'windows-smtc-daemon.ps1');
   }
 
   private spawnDaemon() {
@@ -83,6 +130,10 @@ export class WindowsSmtcService extends EventEmitter {
 
       this.isAlive = true;
       let buffer = '';
+
+      this.psProcess.stderr?.on('data', (chunk: Buffer) => {
+        console.error('[WindowsSmtc Daemon Stderr]:', chunk.toString('utf8'));
+      });
 
       this.psProcess.stdout?.on('data', async (chunk: Buffer) => {
         buffer += chunk.toString('utf8');
@@ -166,12 +217,14 @@ export class WindowsSmtcService extends EventEmitter {
         }
       });
 
-      this.psProcess.on('exit', () => {
+      this.psProcess.on('exit', (code) => {
+        console.warn(`[WindowsSmtc] Daemon process exited with code ${code}`);
         this.isAlive = false;
         this.scheduleRestart();
       });
 
-      this.psProcess.on('error', () => {
+      this.psProcess.on('error', (err) => {
+        console.error('[WindowsSmtc] Daemon process error:', err);
         this.isAlive = false;
         this.scheduleRestart();
       });

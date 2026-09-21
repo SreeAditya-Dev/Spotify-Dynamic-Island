@@ -10,6 +10,17 @@
     "dist-electron/**/*",
     "package.json"
   ],
+  "asar": true,
+  "asarUnpack": [
+    "dist-electron/main/windows-smtc-daemon.ps1",
+    "**/*.ps1"
+  ],
+  "extraResources": [
+    {
+      "from": "src/main/services/windows-smtc-daemon.ps1",
+      "to": "windows-smtc-daemon.ps1"
+    }
+  ],
   "win": {
     "target": [
       {
