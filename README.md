@@ -18,7 +18,7 @@
 
 <br />
 
-<img src="spotify_dynamic_island.png" alt="Nilo Dynamic Island Preview" width="100%" />
+![Dynamic Island Preview](https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=1200&auto=format&fit=crop&q=80)
 
 </div>
 
