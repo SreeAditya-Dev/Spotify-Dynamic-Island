@@ -59,11 +59,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Run test suite
-        run: pnpm test
-
       - name: Build frontend & main bundles
         run: pnpm run build
+
+      - name: Run test suite
+        run: pnpm test
 
       - name: Package with electron-builder
         run: pnpm exec electron-builder --publish never

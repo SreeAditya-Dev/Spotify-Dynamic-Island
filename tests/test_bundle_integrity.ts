@@ -1,11 +1,21 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 
 async function testBundleIntegrity() {
   console.log('--- TEST 5: Application Bundle & Extension Integrity ---');
 
-  // Check 1: dist/index.html
   const htmlPath = path.join(process.cwd(), 'dist', 'index.html');
+  const mainBundle = path.join(process.cwd(), 'dist-electron', 'main', 'index.js');
+  const preloadBundle = path.join(process.cwd(), 'dist-electron', 'preload', 'preload.cjs');
+
+  // Auto-build if bundles do not exist yet (e.g. on fresh CI checkout)
+  if (!fs.existsSync(htmlPath) || !fs.existsSync(mainBundle) || !fs.existsSync(preloadBundle)) {
+    console.log('Production bundles missing, building before integrity verification...');
+    execSync('npm run build', { stdio: 'inherit' });
+  }
+
+  // Check 1: dist/index.html
   if (!fs.existsSync(htmlPath)) {
     throw new Error('dist/index.html is missing. Run pnpm build first.');
   }
@@ -16,8 +26,6 @@ async function testBundleIntegrity() {
   console.log('[PASS] Production HTML index verified');
 
   // Check 2: Electron Main and Preload bundles
-  const mainBundle = path.join(process.cwd(), 'dist-electron', 'main', 'index.js');
-  const preloadBundle = path.join(process.cwd(), 'dist-electron', 'preload', 'preload.cjs');
   if (!fs.existsSync(mainBundle)) {
     throw new Error('dist-electron/main/index.js is missing');
   }
