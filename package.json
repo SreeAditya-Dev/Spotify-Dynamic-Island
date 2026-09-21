@@ -45,9 +45,11 @@
   },
   "dependencies": {
     "@types/ws": "^8.18.1",
+    "clsx": "^2.1.1",
     "lucide-react": "^1.47.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "tailwind-merge": "^3.7.0",
     "ws": "^8.21.3"
   }
 }

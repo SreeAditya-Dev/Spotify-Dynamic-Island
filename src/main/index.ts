@@ -149,28 +149,13 @@ function stopKeepOnTop() {
   }
 }
 
-/** Calculates stage window bounds based on screen dimensions and chosen position */
-function getStageBounds(settings?: IslandSettings) {
-  const currentSettings = settings ?? settingsManager.getSettings();
+/** Calculates stage window bounds based on screen dimensions (always centered) */
+function getStageBounds(_settings?: IslandSettings) {
   const display = screen.getPrimaryDisplay();
   const screenWidth = display.bounds.width;
   const screenX = display.bounds.x;
   const screenY = display.bounds.y;
-  const screenCenterX = screenX + Math.round(screenWidth / 2);
-  const centerOffset = currentSettings.centerOffset ?? 100;
-
-  let x: number;
-  if (currentSettings.position === 'left') {
-    // Next parallel side on the left of center (not extreme left)
-    x = (screenCenterX - centerOffset) - (STAGE_WIDTH - STAGE_INNER_PADDING);
-  } else if (currentSettings.position === 'right') {
-    // Next parallel side on the right of center (not extreme right)
-    x = (screenCenterX + centerOffset) - STAGE_INNER_PADDING;
-  } else {
-    // Top center
-    x = screenX + Math.round((screenWidth - STAGE_WIDTH) / 2);
-  }
-
+  const x = screenX + Math.round((screenWidth - STAGE_WIDTH) / 2);
   const y = screenY + STAGE_TOP;
   return { x, y, width: STAGE_WIDTH, height: STAGE_HEIGHT };
 }
@@ -336,39 +321,10 @@ function createTray() {
 
     const contextMenu = Menu.buildFromTemplate([
       {
-        label: '⚙️ Settings Companion...',
+        label: 'Preferences...',
         click: () => createSettingsWindow()
       },
       { type: 'separator' },
-      {
-        label: 'Position',
-        submenu: [
-          {
-            label: 'Left Parallel Side',
-            type: 'radio',
-            checked: currentSettings.position === 'left',
-            click: () => {
-              settingsManager.updateSettings({ position: 'left' });
-            }
-          },
-          {
-            label: 'Top Center (Default)',
-            type: 'radio',
-            checked: currentSettings.position === 'center',
-            click: () => {
-              settingsManager.updateSettings({ position: 'center' });
-            }
-          },
-          {
-            label: 'Right Parallel Side',
-            type: 'radio',
-            checked: currentSettings.position === 'right',
-            click: () => {
-              settingsManager.updateSettings({ position: 'right' });
-            }
-          }
-        ]
-      },
       {
         label: 'Expand on Hover',
         type: 'checkbox',
@@ -394,12 +350,7 @@ function createTray() {
           shell.openExternal('https://open.spotify.com');
         }
       },
-      {
-        label: 'Reset Position to Center',
-        click: () => {
-          settingsManager.updateSettings({ position: 'center' });
-        }
-      },
+      { type: 'separator' },
       {
         label: 'Quit Nilo',
         click: () => {

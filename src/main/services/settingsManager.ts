@@ -28,18 +28,13 @@ export class SettingsManager extends EventEmitter {
   public updateSettings(partial: Partial<IslandSettings>): IslandSettings {
     this.settings = {
       ...this.settings,
-      ...partial
+      ...partial,
+      position: 'center'
     };
 
-    // Ensure centerOffset, edgeMargin and topOffset are valid numbers
-    if (typeof this.settings.centerOffset === 'number') {
-      this.settings.centerOffset = Math.max(20, Math.min(800, this.settings.centerOffset));
-    }
-    if (typeof this.settings.edgeMargin === 'number') {
-      this.settings.edgeMargin = Math.max(0, Math.min(200, this.settings.edgeMargin));
-    }
+    // Ensure topOffset is within valid screen bounds
     if (typeof this.settings.topOffset === 'number') {
-      this.settings.topOffset = Math.max(0, Math.min(100, this.settings.topOffset));
+      this.settings.topOffset = Math.max(0, Math.min(50, this.settings.topOffset));
     }
 
     this.saveSettings();
@@ -82,7 +77,8 @@ export class SettingsManager extends EventEmitter {
         const parsed = JSON.parse(content);
         return {
           ...DEFAULT_SETTINGS,
-          ...parsed
+          ...parsed,
+          position: 'center'
         };
       }
     } catch (e) {

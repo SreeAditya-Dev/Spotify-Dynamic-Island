@@ -50,27 +50,16 @@ export * from './settings';
 
 export const STAGE_INNER_PADDING = 20;
 
-/** Where the capsule sits inside the stage for a given mode and screen placement. */
+/** Where the capsule sits inside the stage for a given mode (always top-centered). */
 export function capsuleRect(
   mode: CapsuleMode,
-  position: IslandPosition = 'center',
-  _centerOffset: number = 100,
+  _position: IslandPosition = 'center',
+  _centerOffset?: number,
   topOffset: number = CAPSULE_TOP
 ): HotRect {
   const { width, height } = CAPSULE[mode];
-  let x: number;
-  if (position === 'left') {
-    // In left parallel side: inner edge is close to center, expands to the left
-    x = STAGE_WIDTH - width - STAGE_INNER_PADDING;
-  } else if (position === 'right') {
-    // In right parallel side: inner edge is close to center, expands to the right
-    x = STAGE_INNER_PADDING;
-  } else {
-    x = Math.round((STAGE_WIDTH - width) / 2);
-  }
-
   return {
-    x,
+    x: Math.round((STAGE_WIDTH - width) / 2),
     y: topOffset,
     width,
     height

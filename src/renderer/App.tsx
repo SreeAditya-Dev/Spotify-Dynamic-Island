@@ -124,12 +124,12 @@ export const App: React.FC = () => {
 
   const size = CAPSULE[mode];
 
-  // Tell the main process where the capsule is based on current mode and placement position.
+  // Tell the main process where the capsule is based on current mode and topOffset.
   useEffect(() => {
     window.dynamicIsland?.setHotRect(
-      capsuleRect(mode, settings.position, settings.centerOffset, settings.topOffset)
+      capsuleRect(mode, 'center', 0, settings.topOffset)
     );
-  }, [mode, settings.position, settings.centerOffset, settings.topOffset]);
+  }, [mode, settings.topOffset]);
 
   // Keep the expanded layer mounted through the collapse animation so it can fade out.
   const [renderExpanded, setRenderExpanded] = useState(false);
@@ -179,24 +179,19 @@ export const App: React.FC = () => {
     width: `${size.width}px`,
     height: `${size.height}px`,
     borderRadius: `${size.radius}px`,
-    ...(settings.position === 'left'
-      ? { right: `${STAGE_INNER_PADDING}px`, left: 'auto', transform: 'translateZ(0)' }
-      : settings.position === 'right'
-      ? { left: `${STAGE_INNER_PADDING}px`, right: 'auto', transform: 'translateZ(0)' }
-      : { left: '50%', right: 'auto', transform: 'translateX(-50%) translateZ(0)' })
+    left: '50%',
+    right: 'auto',
+    transform: 'translateX(-50%) translateZ(0)'
   };
 
   const glowStyle: React.CSSProperties = {
     width: `${size.width * 0.8}px`,
     height: `${size.height * 0.8}px`,
     top: `${settings.topOffset + 10}px`,
+    left: '50%',
+    transform: 'translateX(-50%)',
     backgroundColor: media.isPlaying ? '#1DB954' : '#ffffff',
-    opacity: isExpanded ? 0.32 : 0.18,
-    ...(settings.position === 'left'
-      ? { right: `${STAGE_INNER_PADDING + size.width * 0.1}px`, left: 'auto', transform: 'none' }
-      : settings.position === 'right'
-      ? { left: `${STAGE_INNER_PADDING + size.width * 0.1}px`, right: 'auto', transform: 'none' }
-      : { left: '50%', right: 'auto', transform: 'translateX(-50%)' })
+    opacity: isExpanded ? 0.32 : 0.18
   };
 
   return (
@@ -210,7 +205,7 @@ export const App: React.FC = () => {
       <section
         aria-label="Nilo"
         data-mode={mode}
-        data-position={settings.position}
+        data-position="center"
         onClick={handleCapsuleClick}
         onPointerDown={() => window.dynamicIsland?.setPointerLock(true)}
         style={capsuleStyle}

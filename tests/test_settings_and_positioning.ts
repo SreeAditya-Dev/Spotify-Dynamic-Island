@@ -1,10 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import { SettingsManager } from '../src/main/services/settingsManager';
-import { capsuleRect, STAGE_WIDTH, STAGE_INNER_PADDING, CAPSULE } from '../src/types/island';
+import { capsuleRect, STAGE_WIDTH, CAPSULE } from '../src/types/island';
 
 async function runTests() {
-  console.log('--- TEST: Settings Manager & Parallel Side Placement Geometry ---');
+  console.log('--- TEST: Settings Manager & Top Center Placement Geometry ---');
 
   const testConfigPath = path.join(process.cwd(), 'tests', 'temp_test_settings.json');
   if (fs.existsSync(testConfigPath)) {
@@ -14,100 +14,66 @@ async function runTests() {
   // Test 1: Settings Manager default state and persistence
   const manager = new SettingsManager(testConfigPath);
   const initial = manager.getSettings();
-  if (initial.position !== 'center' || initial.hoverEnabled !== true || initial.centerOffset !== 100) {
+  if (initial.position !== 'center' || initial.hoverEnabled !== true || initial.topOffset !== 6) {
     throw new Error('Default settings mismatch');
   }
-  console.log('[PASS] SettingsManager initialized with valid parallel defaults');
+  console.log('[PASS] SettingsManager initialized with valid top-center defaults');
 
-  // Test 2: Update position to 'left' (Left Parallel Side)
-  manager.updateSettings({ position: 'left', centerOffset: 120 });
-  const leftSettings = manager.getSettings();
-  if (leftSettings.position !== 'left' || leftSettings.centerOffset !== 120) {
-    throw new Error('Failed to update position to left');
+  // Test 2: Update options and verify disk persistence
+  manager.updateSettings({ hoverEnabled: false, topOffset: 12, glowEnabled: false });
+  const updated = manager.getSettings();
+  if (updated.hoverEnabled !== false || updated.topOffset !== 12 || updated.glowEnabled !== false) {
+    throw new Error('Failed to update settings values');
   }
   if (!fs.existsSync(testConfigPath)) {
     throw new Error('Settings file was not saved to disk');
   }
-  console.log('[PASS] Position updated to left parallel side and persisted to disk');
+  console.log('[PASS] Settings update and atomic disk persistence verified');
 
-  // Test 3: Update position to 'right' and toggle hover off
-  manager.updateSettings({ position: 'right', hoverEnabled: false });
-  const rightSettings = manager.getSettings();
-  if (rightSettings.position !== 'right' || rightSettings.hoverEnabled !== false) {
-    throw new Error('Failed to update position to right or toggle hover');
+  // Test 3: Symmetrical Top-Center Geometry Verification
+  const stageCenter = STAGE_WIDTH / 2; // 400
+
+  // 3A: Compact capsule geometry
+  const compactRect = capsuleRect('compact', 'center', 0, 10);
+  const compactCenter = compactRect.x + CAPSULE.compact.width / 2;
+  if (compactCenter !== stageCenter) {
+    throw new Error(`Compact capsule not centered: expected ${stageCenter}, got ${compactCenter}`);
   }
-  console.log('[PASS] Position updated to right parallel side and hover disabled');
-
-  // Test 4: Verify Geometry Math for Next Parallel Sides
-  const screenWidth = 1920;
-  const screenX = 0;
-  const screenCenterX = screenX + Math.round(screenWidth / 2); // 960
-  const centerOffset = 100;
-  const compactWidth = CAPSULE.compact.width; // 200
-  const expandedWidth = CAPSULE.expanded.width; // 460
-
-  // Case 4A: Left Parallel Side (not extreme left)
-  const leftHotRect = capsuleRect('compact', 'left', centerOffset);
-  const stageLeftX = (screenCenterX - centerOffset) - (STAGE_WIDTH - STAGE_INNER_PADDING);
-  const capsuleScreenRightEdge = stageLeftX + leftHotRect.x + compactWidth;
-  const capsuleScreenLeftEdge = stageLeftX + leftHotRect.x;
-
-  if (capsuleScreenRightEdge !== screenCenterX - centerOffset) {
-    throw new Error(`Expected left parallel capsule right edge to be ${screenCenterX - centerOffset}, got ${capsuleScreenRightEdge}`);
+  if (compactRect.y !== 10) {
+    throw new Error(`Expected topOffset 10, got ${compactRect.y}`);
   }
-  if (capsuleScreenLeftEdge <= 0) {
-    throw new Error(`Left capsule must NOT be on extreme left border (0): left is at ${capsuleScreenLeftEdge}`);
-  }
-  console.log(`[PASS] Left parallel placement: capsule occupies [${capsuleScreenLeftEdge}, ${capsuleScreenRightEdge}] (parallel to center, not extreme left 0)`);
+  console.log(`[PASS] Compact mode centered perfectly at x=${compactRect.x} (center=${compactCenter}px)`);
 
-  // Case 4B: Right Parallel Side (not extreme right)
-  const rightHotRect = capsuleRect('compact', 'right', centerOffset);
-  const stageRightX = (screenCenterX + centerOffset) - STAGE_INNER_PADDING;
-  const rightCapsuleScreenLeftEdge = stageRightX + rightHotRect.x;
-  const rightCapsuleScreenRightEdge = stageRightX + rightHotRect.x + compactWidth;
-
-  if (rightCapsuleScreenLeftEdge !== screenCenterX + centerOffset) {
-    throw new Error(`Expected right parallel capsule left edge to be ${screenCenterX + centerOffset}, got ${rightCapsuleScreenLeftEdge}`);
+  // 3B: Expanded capsule geometry
+  const expandedRect = capsuleRect('expanded', 'center', 0, 10);
+  const expandedCenter = expandedRect.x + CAPSULE.expanded.width / 2;
+  if (expandedCenter !== stageCenter) {
+    throw new Error(`Expanded capsule not centered: expected ${stageCenter}, got ${expandedCenter}`);
   }
-  if (rightCapsuleScreenRightEdge >= screenWidth) {
-    throw new Error(`Right capsule must NOT be on extreme right border (${screenWidth}): right is at ${rightCapsuleScreenRightEdge}`);
-  }
-  console.log(`[PASS] Right parallel placement: capsule occupies [${rightCapsuleScreenLeftEdge}, ${rightCapsuleScreenRightEdge}] (parallel to center, not extreme right ${screenWidth})`);
+  console.log(`[PASS] Expanded mode centered perfectly at x=${expandedRect.x} (center=${expandedCenter}px)`);
 
-  // Case 4C: Morphing behavior on parallel sides
-  // When left expands, its right edge (next to center camera) stays fixed while expanding outward to the left
-  const leftExpandedHotRect = capsuleRect('expanded', 'left', centerOffset);
-  const leftExpandedRightEdge = stageLeftX + leftExpandedHotRect.x + expandedWidth;
-  if (leftExpandedRightEdge !== screenCenterX - centerOffset) {
-    throw new Error(`Left expanded right edge moved! Expected ${screenCenterX - centerOffset}, got ${leftExpandedRightEdge}`);
+  // 3C: Symmetrical morphing alignment
+  if (compactCenter !== expandedCenter) {
+    throw new Error('Capsule centers must align identically for seamless morph expansion');
   }
-  console.log(`[PASS] Left expanded morph: right edge stays anchored at parallel boundary ${leftExpandedRightEdge}px`);
+  console.log(`[PASS] Symmetrical morphing confirmed: compact and expanded centers align at ${stageCenter}px`);
 
-  // When right expands, its left edge (next to center camera) stays fixed while expanding outward to the right
-  const rightExpandedHotRect = capsuleRect('expanded', 'right', centerOffset);
-  const rightExpandedLeftEdge = stageRightX + rightExpandedHotRect.x;
-  if (rightExpandedLeftEdge !== screenCenterX + centerOffset) {
-    throw new Error(`Right expanded left edge moved! Expected ${screenCenterX + centerOffset}, got ${rightExpandedLeftEdge}`);
-  }
-  console.log(`[PASS] Right expanded morph: left edge stays anchored at parallel boundary ${rightExpandedLeftEdge}px`);
-
-  // Test 5: Reset Settings
-  manager.resetSettings();
-  const reset = manager.getSettings();
-  if (reset.position !== 'center' || reset.hoverEnabled !== true || reset.centerOffset !== 100) {
-    throw new Error('Reset failed to restore default settings');
+  // Test 4: Reset functionality
+  const resetSettings = manager.resetSettings();
+  if (resetSettings.position !== 'center' || resetSettings.hoverEnabled !== true || resetSettings.topOffset !== 6) {
+    throw new Error('Reset failed to restore defaults');
   }
   console.log('[PASS] Reset restores all default configuration values');
 
-  // Cleanup test file
+  // Teardown
   if (fs.existsSync(testConfigPath)) {
     fs.unlinkSync(testConfigPath);
   }
 
-  console.log('--- ALL PARALLEL SETTINGS & GEOMETRY TESTS PASSED ---\n');
+  console.log('--- ALL SETTINGS & TOP-CENTER GEOMETRY TESTS PASSED ---\n');
 }
 
-runTests().catch((e) => {
-  console.error('[FAIL] Test failed:', e);
+runTests().catch((err) => {
+  console.error('[FAIL] Settings test failed:', err);
   process.exit(1);
 });
