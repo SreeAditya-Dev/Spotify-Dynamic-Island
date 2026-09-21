@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "vite",
     "settings": "electron . --settings",
-    "build": "tsc && vite build && powershell.exe -Command \"Copy-Item src/main/services/windows-smtc-daemon.ps1 dist-electron/main/ -Force -ErrorAction SilentlyContinue\"",
+    "build": "tsc && vite build && node scripts/copy-daemon.js",
     "start": "electron .",
     "package": "node scripts/package-app.js",
+    "dist": "npm run build && electron-builder",
     "shortcut": "powershell -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
     "test": "tsx tests/run_all_tests.ts"
   },
