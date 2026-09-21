@@ -10,6 +10,8 @@
     "settings": "electron . --settings",
     "build": "tsc && vite build && powershell.exe -Command \"Copy-Item src/main/services/windows-smtc-daemon.ps1 dist-electron/main/ -Force -ErrorAction SilentlyContinue\"",
     "start": "electron .",
+    "package": "node scripts/package-app.js",
+    "shortcut": "powershell -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
     "test": "tsx tests/run_all_tests.ts"
   },
   "keywords": [
@@ -30,6 +32,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.6.1",
     "electron": "^44.4.2",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
